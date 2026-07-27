@@ -3,7 +3,12 @@
         const selector = document.getElementById("id_obra_social");
         const campoOtra = document.querySelector(".field-obra_social_otra");
         if (!selector || !campoOtra) return;
-        campoOtra.style.display = selector.value === "Otra" ? "" : "none";
+        const esOtra = selector.value === "Otra";
+        campoOtra.style.display = esOtra ? "" : "none";
+        if (!esOtra) {
+            const inputOtra = campoOtra.querySelector("input");
+            if (inputOtra) inputOtra.value = "";
+        }
     }
 
     document.addEventListener("DOMContentLoaded", function () {

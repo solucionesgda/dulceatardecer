@@ -67,13 +67,13 @@ class Residente(models.Model):
     geriatrico = models.ForeignKey(Geriatrico, on_delete=models.PROTECT, related_name="residentes")
     nombre = models.CharField(max_length=100)
     apellido = models.CharField(max_length=100)
-    dni = models.CharField(max_length=20, unique=True)
+    dni = models.CharField(max_length=8, unique=True, validators=[RegexValidator(r"^\d{8}$", "El DNI debe contener exactamente 8 números.")])
     fecha_nacimiento = models.DateField(blank=True, null=True)
     fecha_ingreso = models.DateField()
     habitacion = models.CharField(max_length=100, blank=True)
     obra_social = models.CharField(max_length=100, blank=True, choices=ObraSocial.choices)
     obra_social_otra = models.CharField(max_length=100, blank=True)
-    numero_afiliado = models.CharField(max_length=100, blank=True, validators=[RegexValidator(r"^[A-Za-z0-9-]+$", "El número de afiliado solo puede contener letras, números y guiones.")])
+    numero_afiliado = models.CharField(max_length=100, blank=True, validators=[RegexValidator(r"^\d+$", "El número de afiliado debe contener solo números.")])
     contacto_familiar = models.CharField(max_length=150, validators=[RegexValidator(r"^\d+$", "Ingrese únicamente números.")])
     email_contacto = models.EmailField(blank=True)
     telefono = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r"^\d+$", "El teléfono solo puede contener números.")])
@@ -95,6 +95,8 @@ class Residente(models.Model):
         super().clean()
         if self.obra_social == self.ObraSocial.OTRA and not self.obra_social_otra.strip():
             raise ValidationError({"obra_social_otra": "Indicá el nombre de la obra social o prepaga."})
+        if self.obra_social != self.ObraSocial.OTRA:
+            self.obra_social_otra = ""
         if self.habitacion and self.geriatrico_id:
             try:
                 numero_habitacion = int(self.habitacion)

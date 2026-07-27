@@ -78,3 +78,21 @@ class GeriatricoTest(TestCase):
         residente = Residente(geriatrico=geriatrico, nombre="Luis", apellido="Gómez", dni="2", fecha_ingreso="2026-01-01", contacto_familiar="3411234568", habitacion="1")
         with self.assertRaises(ValidationError):
             residente.full_clean()
+
+    def test_dni_debe_tener_exactamente_ocho_numeros(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="1234A678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")
+        with self.assertRaises(ValidationError):
+            residente.full_clean()
+
+    def test_numero_afiliado_solo_admite_numeros(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567", numero_afiliado="ABC-123")
+        with self.assertRaises(ValidationError):
+            residente.full_clean()
+
+    def test_limpia_obra_social_otra_si_selecciona_otra_cobertura(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567", obra_social=Residente.ObraSocial.PAMI, obra_social_otra="Cobertura anterior")
+        residente.full_clean()
+        self.assertEqual(residente.obra_social_otra, "")
