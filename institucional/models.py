@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 
 
@@ -7,7 +8,6 @@ class Geriatrico(models.Model):
     codigo = models.CharField(max_length=30, unique=True)
     direccion = models.CharField(max_length=255)
     capacidad_total = models.PositiveIntegerField()
-    camas_ocupadas = models.PositiveIntegerField(default=0)
     activo = models.BooleanField(default=True)
     observaciones = models.TextField(blank=True)
 
@@ -20,14 +20,14 @@ class Geriatrico(models.Model):
                 condition=models.Q(capacidad_total__gt=0),
                 name="capacidad_total_mayor_a_cero",
             ),
-            models.CheckConstraint(
-                condition=models.Q(camas_ocupadas__lte=models.F("capacidad_total")),
-                name="ocupacion_no_supera_capacidad",
-            ),
         ]
 
     def __str__(self):
         return f"{self.nombre} ({self.codigo})"
+
+    @property
+    def camas_ocupadas(self):
+        return self.residentes.filter(estado=Residente.Estado.ACTIVO).count()
 
     @property
     def camas_disponibles(self):
@@ -37,12 +37,59 @@ class Geriatrico(models.Model):
         super().clean()
         if self.capacidad_total is not None and self.capacidad_total <= 0:
             raise ValidationError({"capacidad_total": "La capacidad total debe ser mayor que 0."})
-        if (
-            self.capacidad_total is not None
-            and self.camas_ocupadas is not None
-            and self.camas_ocupadas > self.capacidad_total
-        ):
-            raise ValidationError({"camas_ocupadas": "Las camas ocupadas no pueden superar la capacidad total."})
+
+
+class Residente(models.Model):
+    class Estado(models.TextChoices):
+        ACTIVO = "Activo", "Activo"
+        ALTA = "Alta", "Alta"
+        TRASLADO = "Traslado", "Traslado"
+        FALLECIDO = "Fallecido", "Fallecido"
+
+    class Movilidad(models.TextChoices):
+        INDEPENDIENTE = "Independiente", "Independiente"
+        ASISTIDA = "Asistida", "Asistida"
+        SILLA_RUEDAS = "Silla de ruedas", "Silla de ruedas"
+        REHABILITACION = "Rehabilitación", "Rehabilitación"
+
+    geriatrico = models.ForeignKey(Geriatrico, on_delete=models.PROTECT, related_name="residentes")
+    nombre = models.CharField(max_length=100)
+    apellido = models.CharField(max_length=100)
+    dni = models.CharField(max_length=20, unique=True)
+    fecha_nacimiento = models.DateField(blank=True, null=True)
+    fecha_ingreso = models.DateField()
+    habitacion = models.CharField(max_length=100, blank=True)
+    obra_social = models.CharField(max_length=100, blank=True)
+    numero_afiliado = models.CharField(max_length=100, blank=True)
+    contacto_familiar = models.CharField(max_length=150)
+    email_contacto = models.EmailField(blank=True)
+    telefono = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r"^\d+$", "El teléfono solo puede contener números.")])
+    medico_tratante = models.CharField(max_length=150, blank=True)
+    diagnostico_principal = models.TextField(blank=True)
+    movilidad = models.CharField(max_length=30, choices=Movilidad.choices, default=Movilidad.INDEPENDIENTE)
+    observaciones = models.TextField(blank=True)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ACTIVO)
+
+    class Meta:
+        ordering = ["apellido", "nombre"]
+        verbose_name = "residente"
+        verbose_name_plural = "residentes"
+
+    def __str__(self):
+        return f"{self.apellido}, {self.nombre}"
+
+    def clean(self):
+        super().clean()
+        if self.estado != self.Estado.ACTIVO or not self.geriatrico_id:
+            return
+        residentes_activos = Residente.objects.filter(
+            geriatrico_id=self.geriatrico_id,
+            estado=self.Estado.ACTIVO,
+        )
+        if self.pk:
+            residentes_activos = residentes_activos.exclude(pk=self.pk)
+        if residentes_activos.count() >= self.geriatrico.capacidad_total:
+            raise ValidationError({"geriatrico": "No se puede dar de alta un residente activo: el geriátrico alcanzó su capacidad."})
 
 
 class ConfiguracionInstitucional(models.Model):
