@@ -2,7 +2,7 @@ from django.contrib import admin
 from django import forms
 from django.http import JsonResponse
 from django.urls import path, reverse
-from .models import ConfiguracionInstitucional, Geriatrico, Residente
+from .models import ConfiguracionInstitucional, Geriatrico, Pago, Residente
 
 
 @admin.register(Geriatrico)
@@ -75,6 +75,22 @@ class ResidenteAdmin(admin.ModelAdmin):
 
     class Media:
         js = ("institucional/js/residente_admin.js", "institucional/js/residente_habitaciones_admin.js")
+
+
+@admin.register(Pago)
+class PagoAdmin(admin.ModelAdmin):
+    list_display = ("residente", "geriatrico", "periodo", "concepto", "monto", "fecha_vencimiento", "estado")
+    list_filter = ("residente__geriatrico", "estado", "periodo")
+    search_fields = ("residente__nombre", "residente__apellido", "residente__dni")
+    readonly_fields = ("estado",)
+
+    @admin.display(description="Geriátrico", ordering="residente__geriatrico__nombre")
+    def geriatrico(self, pago):
+        return pago.residente.geriatrico
+
+    def get_queryset(self, request):
+        Pago.actualizar_vencidos()
+        return super().get_queryset(request).select_related("residente__geriatrico")
 
 
 @admin.register(ConfiguracionInstitucional)

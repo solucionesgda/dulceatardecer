@@ -2,7 +2,9 @@ from django.contrib.auth.models import Group, Permission, User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
-from .models import Geriatrico, Residente
+from datetime import date, timedelta
+from decimal import Decimal
+from .models import Geriatrico, Pago, Residente
 
 
 class AccesoTest(TestCase):
@@ -39,6 +41,23 @@ class AccesoTest(TestCase):
         response = self.client.get(reverse("residente_list"), {"q": "Pérez", "geriatrico": geriatrico.pk, "estado": Residente.Estado.ACTIVO})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ana")
+
+    def test_listado_pagos_filtra_y_actualiza_vencidos(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=3)
+        residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")
+        pago = Pago.objects.create(residente=residente, periodo="2026-07", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today() - timedelta(days=1))
+        self.client.login(username="consulta", password="clave-segura")
+        response = self.client.get(reverse("pago_list"), {"q": "12345678", "estado": Pago.Estado.VENCIDO, "periodo": "2026-07", "geriatrico": geriatrico.pk})
+        pago.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(pago.estado, Pago.Estado.VENCIDO)
+        self.assertContains(response, "Cuota")
+
+    def test_pago_con_fecha_de_pago_se_guarda_pagado(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=3)
+        residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")
+        pago = Pago.objects.create(residente=residente, periodo="2026-07", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today(), fecha_pago=date.today())
+        self.assertEqual(pago.estado, Pago.Estado.PAGADO)
 
 
 class GeriatricoTest(TestCase):

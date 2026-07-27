@@ -3,7 +3,7 @@ from django.db.models import Count, Q, Sum
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
 from .forms import GeriatricoForm
-from .models import Geriatrico, Residente
+from .models import Geriatrico, Pago, Residente
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -102,3 +102,39 @@ class ResidenteDetailView(LoginRequiredMixin, DetailView):
     model = Residente
     template_name = "institucional/residente_detail.html"
     queryset = Residente.objects.select_related("geriatrico")
+
+
+class PagoListView(LoginRequiredMixin, ListView):
+    model = Pago
+    template_name = "institucional/pago_list.html"
+
+    def get_queryset(self):
+        Pago.actualizar_vencidos()
+        queryset = Pago.objects.select_related("residente__geriatrico")
+        busqueda = self.request.GET.get("q", "").strip()
+        geriatrico = self.request.GET.get("geriatrico", "")
+        estado = self.request.GET.get("estado", "")
+        periodo = self.request.GET.get("periodo", "").strip()
+        if busqueda:
+            queryset = queryset.filter(
+                Q(residente__nombre__icontains=busqueda)
+                | Q(residente__apellido__icontains=busqueda)
+                | Q(residente__dni__icontains=busqueda)
+            )
+        if geriatrico:
+            queryset = queryset.filter(residente__geriatrico_id=geriatrico)
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        if periodo:
+            queryset = queryset.filter(periodo=periodo)
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            "geriatrico_opciones": Geriatrico.objects.all(),
+            "estado_opciones": Pago.Estado.choices,
+            "periodo_opciones": Pago.objects.order_by("-periodo").values_list("periodo", flat=True).distinct(),
+            "filtros": self.request.GET,
+        })
+        return context

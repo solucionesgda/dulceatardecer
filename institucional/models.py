@@ -1,5 +1,8 @@
+from datetime import date
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 
 
@@ -124,6 +127,55 @@ class Residente(models.Model):
             residentes_activos = residentes_activos.exclude(pk=self.pk)
         if residentes_activos.count() >= self.geriatrico.capacidad_total:
             raise ValidationError({"geriatrico": "No se puede dar de alta un residente activo: el geriátrico alcanzó su capacidad."})
+
+
+class Pago(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE = "Pendiente", "Pendiente"
+        PAGADO = "Pagado", "Pagado"
+        VENCIDO = "Vencido", "Vencido"
+
+    class MedioPago(models.TextChoices):
+        EFECTIVO = "Efectivo", "Efectivo"
+        TRANSFERENCIA = "Transferencia", "Transferencia"
+        DEBITO_AUTOMATICO = "Débito automático", "Débito automático"
+        CHEQUE = "Cheque", "Cheque"
+
+    residente = models.ForeignKey(Residente, on_delete=models.PROTECT, related_name="pagos")
+    periodo = models.CharField(max_length=7, validators=[RegexValidator(r"^\d{4}-(0[1-9]|1[0-2])$", "El período debe tener el formato AAAA-MM.")])
+    concepto = models.CharField(max_length=150)
+    monto = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    fecha_vencimiento = models.DateField()
+    fecha_pago = models.DateField(blank=True, null=True)
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.PENDIENTE, editable=False)
+    medio_pago = models.CharField(max_length=30, choices=MedioPago.choices, blank=True)
+    observaciones = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-periodo", "residente__apellido", "residente__nombre"]
+        verbose_name = "pago"
+        verbose_name_plural = "pagos"
+
+    def __str__(self):
+        return f"{self.residente} · {self.periodo} · {self.concepto}"
+
+    def calcular_estado(self):
+        if self.fecha_pago:
+            return self.Estado.PAGADO
+        if self.fecha_vencimiento < date.today():
+            return self.Estado.VENCIDO
+        return self.Estado.PENDIENTE
+
+    def save(self, *args, **kwargs):
+        self.estado = self.calcular_estado()
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def actualizar_vencidos(cls):
+        cls.objects.filter(
+            fecha_pago__isnull=True,
+            fecha_vencimiento__lt=date.today(),
+        ).exclude(estado=cls.Estado.VENCIDO).update(estado=cls.Estado.VENCIDO)
 
 
 class ConfiguracionInstitucional(models.Model):
