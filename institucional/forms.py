@@ -2,7 +2,7 @@ from django import forms
 from datetime import date
 from decimal import Decimal
 
-from .models import Geriatrico, Pago, PagoParcial, Residente
+from .models import CajaMovimiento, Geriatrico, Pago, PagoParcial, Residente
 
 
 class GeriatricoForm(forms.ModelForm):
@@ -66,3 +66,10 @@ class AjusteMontoForm(forms.Form):
         if porcentaje <= Decimal("-100"):
             raise forms.ValidationError("El porcentaje debe dejar un monto mayor que cero.")
         return porcentaje
+
+
+class EgresoCajaForm(forms.ModelForm):
+    class Meta:
+        model = CajaMovimiento
+        fields = ("fecha", "geriatrico", "categoria", "descripcion", "importe", "medio_pago", "observaciones")
+        widgets = {"fecha": forms.DateInput(attrs={"type": "date"}), "observaciones": forms.Textarea(attrs={"rows": 3})}

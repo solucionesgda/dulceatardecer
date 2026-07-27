@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.urls import reverse
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import Geriatrico, Pago, PagoParcial, Residente
+from .models import CajaMovimiento, Geriatrico, Pago, PagoParcial, Residente
 
 
 class AccesoTest(TestCase):
@@ -125,6 +125,22 @@ class AccesoTest(TestCase):
         self.assertEqual(parcial.estado, Pago.Estado.PARCIAL)
         self.assertEqual(pagado.estado, Pago.Estado.PAGADO)
         self.assertEqual(vencido.estado, Pago.Estado.VENCIDO)
+
+    def test_abono_genera_ingreso_automatico_en_caja(self):
+        residente = self.crear_residente_con_monto("92345678", "1000.00")
+        pago = Pago.objects.create(residente=residente, periodo="2027-02", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        abono = PagoParcial.objects.create(pago=pago, monto=Decimal("300.00"), fecha_pago=date.today())
+        movimiento = CajaMovimiento.objects.get(abono=abono)
+        self.assertEqual(movimiento.tipo, CajaMovimiento.Tipo.INGRESO)
+        self.assertEqual(movimiento.importe, Decimal("300.00"))
+
+    def test_no_permite_egreso_superior_al_saldo(self):
+        residente = self.crear_residente_con_monto("10345678", "1000.00")
+        pago = Pago.objects.create(residente=residente, periodo="2027-03", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        PagoParcial.objects.create(pago=pago, monto=Decimal("100.00"), fecha_pago=date.today())
+        egreso = CajaMovimiento(tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=residente.geriatrico, categoria="Servicios", importe=Decimal("101.00"))
+        with self.assertRaises(ValidationError):
+            egreso.full_clean()
 
 
 class GeriatricoTest(TestCase):

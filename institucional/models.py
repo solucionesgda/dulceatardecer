@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Sum
+from django.conf import settings
 
 
 class Geriatrico(models.Model):
@@ -213,6 +214,7 @@ class PagoParcial(models.Model):
     fecha_pago = models.DateField(default=date.today)
     medio_pago = models.CharField(max_length=30, choices=Pago.MedioPago.choices, blank=True)
     observaciones = models.TextField(blank=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="abonos_registrados")
 
     class Meta:
         ordering = ["fecha_pago", "pk"]
@@ -233,9 +235,69 @@ class PagoParcial(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
         self.pago.recalcular_estado()
+        CajaMovimiento.crear_ingreso_desde_abono(self)
 
     def __str__(self):
         return f"{self.pago} · {self.monto}"
+
+
+class CajaMovimiento(models.Model):
+    class Tipo(models.TextChoices):
+        INGRESO = "Ingreso", "Ingreso"
+        EGRESO = "Egreso", "Egreso"
+
+    fecha = models.DateField(default=date.today)
+    tipo = models.CharField(max_length=10, choices=Tipo.choices)
+    geriatrico = models.ForeignKey(Geriatrico, on_delete=models.PROTECT, related_name="movimientos_caja")
+    residente = models.ForeignKey(Residente, on_delete=models.PROTECT, blank=True, null=True, related_name="movimientos_caja")
+    pago = models.ForeignKey(Pago, on_delete=models.PROTECT, blank=True, null=True, related_name="movimientos_caja")
+    abono = models.OneToOneField(PagoParcial, on_delete=models.PROTECT, blank=True, null=True, related_name="movimiento_caja")
+    categoria = models.CharField(max_length=100, blank=True)
+    descripcion = models.CharField(max_length=255, blank=True)
+    importe = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    medio_pago = models.CharField(max_length=30, choices=Pago.MedioPago.choices, blank=True)
+    observaciones = models.TextField(blank=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="movimientos_caja")
+
+    class Meta:
+        ordering = ["-fecha", "-pk"]
+        verbose_name = "movimiento de caja"
+        verbose_name_plural = "movimientos de caja"
+
+    def clean(self):
+        super().clean()
+        if self.tipo == self.Tipo.EGRESO:
+            saldo = self.saldo_actual(excluir_pk=self.pk)
+            if self.importe > saldo:
+                raise ValidationError({"importe": "El egreso no puede superar el saldo disponible."})
+
+    @classmethod
+    def saldo_actual(cls, excluir_pk=None):
+        movimientos = cls.objects.all()
+        if excluir_pk:
+            movimientos = movimientos.exclude(pk=excluir_pk)
+        ingresos = movimientos.filter(tipo=cls.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        egresos = movimientos.filter(tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        return ingresos - egresos
+
+    @classmethod
+    def crear_ingreso_desde_abono(cls, abono):
+        return cls.objects.get_or_create(
+            abono=abono,
+            defaults={
+                "fecha": abono.fecha_pago,
+                "tipo": cls.Tipo.INGRESO,
+                "geriatrico": abono.pago.residente.geriatrico,
+                "residente": abono.pago.residente,
+                "pago": abono.pago,
+                "categoria": "Cuota residente",
+                "descripcion": f"Abono de {abono.pago.residente}",
+                "importe": abono.monto,
+                "medio_pago": abono.medio_pago,
+                "observaciones": abono.observaciones,
+                "usuario": abono.usuario,
+            },
+        )
 
 
 class ConfiguracionInstitucional(models.Model):

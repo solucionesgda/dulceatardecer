@@ -9,8 +9,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import AjusteMontoForm, GenerarCuotasForm, GeriatricoForm, PagoForm, PagoParcialForm
-from .models import Geriatrico, Pago, PagoParcial, Residente
+from .forms import AjusteMontoForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, PagoForm, PagoParcialForm
+from .models import CajaMovimiento, Geriatrico, Pago, PagoParcial, Residente
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -110,6 +110,17 @@ class ResidenteDetailView(LoginRequiredMixin, DetailView):
     template_name = "institucional/residente_detail.html"
     queryset = Residente.objects.select_related("geriatrico")
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        pagos = self.object.pagos.prefetch_related("abonos").all()
+        context.update({
+            "cuenta_pagos": pagos,
+            "total_facturado": sum((pago.monto for pago in pagos), Decimal("0.00")),
+            "total_abonado": sum((pago.total_abonado for pago in pagos), Decimal("0.00")),
+            "deuda_total": sum((pago.saldo_pendiente for pago in pagos), Decimal("0.00")),
+        })
+        return context
+
 
 class PagoListView(LoginRequiredMixin, ListView):
     model = Pago
@@ -196,6 +207,7 @@ class PagoDetailView(LoginRequiredMixin, DetailView):
         if form.is_valid():
             abono = form.save(commit=False)
             abono.pago = self.object
+            abono.usuario = request.user
             try:
                 abono.save()
             except ValidationError as error:
@@ -272,3 +284,35 @@ class AjusteMontoView(LoginRequiredMixin, TemplateView):
             messages.success(request, f"Se actualizaron {len(vista_previa)} montos mensuales.")
             return redirect("pago_list")
         return self.render_to_response(self.get_context_data(form=form, vista_previa=vista_previa))
+
+
+class CajaListView(LoginRequiredMixin, ListView):
+    model = CajaMovimiento
+    template_name = "institucional/caja_list.html"
+
+    def get_queryset(self):
+        return CajaMovimiento.objects.select_related("geriatrico", "residente", "pago", "usuario")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        ingresos = CajaMovimiento.objects.filter(tipo=CajaMovimiento.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        egresos = CajaMovimiento.objects.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos})
+        return context
+
+
+class EgresoCajaCreateView(LoginRequiredMixin, CreateView):
+    model = CajaMovimiento
+    form_class = EgresoCajaForm
+    template_name = "institucional/egreso_form.html"
+    success_url = reverse_lazy("caja_list")
+
+    def form_valid(self, form):
+        form.instance.tipo = CajaMovimiento.Tipo.EGRESO
+        form.instance.usuario = self.request.user
+        try:
+            form.instance.full_clean()
+        except ValidationError as error:
+            form.add_error("importe", error.message_dict.get("importe", ["No se pudo registrar el egreso."])[0])
+            return self.form_invalid(form)
+        return super().form_valid(form)
