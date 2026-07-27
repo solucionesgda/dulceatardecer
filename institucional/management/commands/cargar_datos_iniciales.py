@@ -16,6 +16,6 @@ class Command(BaseCommand):
             grupo, _ = Group.objects.get_or_create(name=nombre)
             grupo.permissions.set(Permission.objects.filter(content_type__app_label="institucional", codename__in=codenames))
         for numero in range(1, 4):
-            Geriatrico.objects.get_or_create(codigo=f"GERI-{numero}", defaults={"nombre": f"Geri {numero}", "direccion": "A definir", "capacidad_camas": 10, "capacidad_total": 10, "activo": True})
+            Geriatrico.objects.get_or_create(codigo=f"GERI-{numero}", defaults={"nombre": f"Geri {numero}", "direccion": "A definir", "capacidad_total": 10, "activo": True})
         ConfiguracionInstitucional.objects.get_or_create(pk=1)
         self.stdout.write(self.style.SUCCESS("Datos iniciales cargados correctamente."))

@@ -6,7 +6,6 @@ class Geriatrico(models.Model):
     nombre = models.CharField(max_length=150)
     codigo = models.CharField(max_length=30, unique=True)
     direccion = models.CharField(max_length=255)
-    capacidad_camas = models.PositiveIntegerField()
     capacidad_total = models.PositiveIntegerField()
     camas_ocupadas = models.PositiveIntegerField(default=0)
     activo = models.BooleanField(default=True)
