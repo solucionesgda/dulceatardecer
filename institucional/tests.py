@@ -59,3 +59,22 @@ class GeriatricoTest(TestCase):
         residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="1", fecha_ingreso="2026-01-01", contacto_familiar="Familiar", obra_social=Residente.ObraSocial.OTRA)
         with self.assertRaises(ValidationError):
             residente.full_clean()
+
+    def test_numero_afiliado_solo_admite_letras_numeros_y_guiones(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="1", fecha_ingreso="2026-01-01", contacto_familiar="3411234567", numero_afiliado="ABC 123")
+        with self.assertRaises(ValidationError):
+            residente.full_clean()
+
+    def test_contacto_familiar_solo_admite_numeros(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="1", fecha_ingreso="2026-01-01", contacto_familiar="Contacto")
+        with self.assertRaises(ValidationError):
+            residente.full_clean()
+
+    def test_no_permite_habitacion_ocupada_por_otro_residente_activo(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
+        Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="1", fecha_ingreso="2026-01-01", contacto_familiar="3411234567", habitacion="1")
+        residente = Residente(geriatrico=geriatrico, nombre="Luis", apellido="Gómez", dni="2", fecha_ingreso="2026-01-01", contacto_familiar="3411234568", habitacion="1")
+        with self.assertRaises(ValidationError):
+            residente.full_clean()

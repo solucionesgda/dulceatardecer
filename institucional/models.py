@@ -73,8 +73,8 @@ class Residente(models.Model):
     habitacion = models.CharField(max_length=100, blank=True)
     obra_social = models.CharField(max_length=100, blank=True, choices=ObraSocial.choices)
     obra_social_otra = models.CharField(max_length=100, blank=True)
-    numero_afiliado = models.CharField(max_length=100, blank=True)
-    contacto_familiar = models.CharField(max_length=150)
+    numero_afiliado = models.CharField(max_length=100, blank=True, validators=[RegexValidator(r"^[A-Za-z0-9-]+$", "El número de afiliado solo puede contener letras, números y guiones.")])
+    contacto_familiar = models.CharField(max_length=150, validators=[RegexValidator(r"^\d+$", "Ingrese únicamente números.")])
     email_contacto = models.EmailField(blank=True)
     telefono = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r"^\d+$", "El teléfono solo puede contener números.")])
     medico_tratante = models.CharField(max_length=150, blank=True)
@@ -95,6 +95,23 @@ class Residente(models.Model):
         super().clean()
         if self.obra_social == self.ObraSocial.OTRA and not self.obra_social_otra.strip():
             raise ValidationError({"obra_social_otra": "Indicá el nombre de la obra social o prepaga."})
+        if self.habitacion and self.geriatrico_id:
+            try:
+                numero_habitacion = int(self.habitacion)
+            except ValueError:
+                raise ValidationError({"habitacion": "Seleccioná una habitación válida."})
+            if not 1 <= numero_habitacion <= self.geriatrico.capacidad_total:
+                raise ValidationError({"habitacion": "La habitación seleccionada no pertenece al geriátrico."})
+            if self.estado == self.Estado.ACTIVO:
+                ocupantes = Residente.objects.filter(
+                    geriatrico_id=self.geriatrico_id,
+                    estado=self.Estado.ACTIVO,
+                    habitacion=self.habitacion,
+                )
+                if self.pk:
+                    ocupantes = ocupantes.exclude(pk=self.pk)
+                if ocupantes.exists():
+                    raise ValidationError({"habitacion": "La habitación seleccionada ya está ocupada."})
         if self.estado != self.Estado.ACTIVO or not self.geriatrico_id:
             return
         residentes_activos = Residente.objects.filter(
