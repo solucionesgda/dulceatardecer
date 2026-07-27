@@ -267,6 +267,7 @@ class CajaMovimiento(models.Model):
     abono = models.OneToOneField(PagoParcial, on_delete=models.PROTECT, blank=True, null=True, related_name="movimiento_caja")
     categoria = models.ForeignKey(CategoriaCaja, on_delete=models.PROTECT, blank=True, null=True, related_name="movimientos")
     descripcion = models.CharField(max_length=255, blank=True)
+    proveedor_beneficiario = models.CharField(max_length=150, blank=True)
     importe = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     medio_pago = models.CharField(max_length=30, choices=Pago.MedioPago.choices, blank=True)
     observaciones = models.TextField(blank=True)

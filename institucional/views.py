@@ -1,5 +1,5 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
@@ -292,7 +292,23 @@ class CajaListView(LoginRequiredMixin, ListView):
     template_name = "institucional/caja_list.html"
 
     def get_queryset(self):
-        return CajaMovimiento.objects.select_related("geriatrico", "residente", "pago", "usuario")
+        queryset = CajaMovimiento.objects.select_related("geriatrico", "residente", "pago", "usuario", "categoria")
+        fecha = self.request.GET.get("fecha", "")
+        geriatrico = self.request.GET.get("geriatrico", "")
+        categoria = self.request.GET.get("categoria", "")
+        proveedor = self.request.GET.get("proveedor", "").strip()
+        medio_pago = self.request.GET.get("medio_pago", "")
+        if fecha:
+            queryset = queryset.filter(fecha=fecha)
+        if geriatrico:
+            queryset = queryset.filter(geriatrico_id=geriatrico)
+        if categoria:
+            queryset = queryset.filter(categoria_id=categoria)
+        if proveedor:
+            queryset = queryset.filter(proveedor_beneficiario__icontains=proveedor)
+        if medio_pago:
+            queryset = queryset.filter(medio_pago=medio_pago)
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -310,7 +326,19 @@ class CajaListView(LoginRequiredMixin, ListView):
         maximo = max((item["total"] for item in categorias), default=Decimal("0.00"))
         for item in categorias:
             item["porcentaje"] = item["total"] / maximo * 100 if maximo else 0
-        context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos, "resumen_dia": resumen_dia, "ingresos_mes": ingresos_mes, "egresos_mes": egresos_mes, "resultado_mes": ingresos_mes - egresos_mes, "egresos_categoria": categorias})
+        meses = []
+        for desplazamiento in range(5, -1, -1):
+            referencia = hoy.replace(day=1)
+            for _ in range(desplazamiento):
+                referencia = (referencia - timedelta(days=1)).replace(day=1)
+            siguiente = (referencia + timedelta(days=32)).replace(day=1)
+            movimientos = CajaMovimiento.objects.filter(fecha__gte=referencia, fecha__lt=siguiente)
+            meses.append({"etiqueta": referencia.strftime("%m/%Y"), "ingresos": movimientos.filter(tipo=CajaMovimiento.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00"), "egresos": movimientos.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")})
+        maximo_mensual = max((max(item["ingresos"], item["egresos"]) for item in meses), default=Decimal("0.00"))
+        for item in meses:
+            item["ingresos_pct"] = item["ingresos"] / maximo_mensual * 100 if maximo_mensual else 0
+            item["egresos_pct"] = item["egresos"] / maximo_mensual * 100 if maximo_mensual else 0
+        context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos, "resumen_dia": resumen_dia, "ingresos_mes": ingresos_mes, "egresos_mes": egresos_mes, "resultado_mes": ingresos_mes - egresos_mes, "egresos_categoria": categorias, "movimientos_mensuales": meses, "geriatrico_opciones": Geriatrico.objects.all(), "categoria_opciones": CategoriaCaja.objects.filter(activa=True), "medio_pago_opciones": Pago.MedioPago.choices, "filtros": self.request.GET})
         return context
 
 

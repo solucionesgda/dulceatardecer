@@ -108,7 +108,7 @@ class PagoParcialAdmin(admin.ModelAdmin):
 class CajaMovimientoAdmin(admin.ModelAdmin):
     list_display = ("fecha", "tipo", "geriatrico", "residente", "importe", "medio_pago", "usuario")
     list_filter = ("tipo", "geriatrico", "fecha")
-    search_fields = ("residente__nombre", "residente__apellido", "descripcion")
+    search_fields = ("residente__nombre", "residente__apellido", "descripcion", "proveedor_beneficiario")
     readonly_fields = ("tipo", "residente", "pago", "abono", "usuario")
 
 

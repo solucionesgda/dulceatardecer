@@ -71,7 +71,7 @@ class AjusteMontoForm(forms.Form):
 class EgresoCajaForm(forms.ModelForm):
     class Meta:
         model = CajaMovimiento
-        fields = ("fecha", "geriatrico", "categoria", "descripcion", "importe", "medio_pago", "observaciones")
+        fields = ("fecha", "geriatrico", "categoria", "proveedor_beneficiario", "descripcion", "importe", "medio_pago", "observaciones")
         widgets = {"fecha": forms.DateInput(attrs={"type": "date"}), "observaciones": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, *args, **kwargs):
