@@ -2,7 +2,7 @@ from django import forms
 from datetime import date
 from decimal import Decimal
 
-from .models import CajaMovimiento, CategoriaCaja, Geriatrico, Pago, PagoParcial, Residente
+from .models import CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, PorcentajeActualizacion, Residente
 
 
 class GeriatricoForm(forms.ModelForm):
@@ -57,15 +57,27 @@ class GenerarCuotasForm(forms.Form):
 
 
 class AjusteMontoForm(forms.Form):
-    porcentaje = forms.DecimalField(max_digits=6, decimal_places=2, help_text="Usá valores negativos para disminuir.")
+    porcentaje = forms.DecimalField(max_digits=6, decimal_places=2, required=False, help_text="Usá valores negativos para disminuir.")
+    porcentaje_predefinido = forms.ModelChoiceField(queryset=PorcentajeActualizacion.objects.filter(activo=True), required=False, empty_label="Ingresar porcentaje manual")
     geriatrico = forms.ModelChoiceField(queryset=Geriatrico.objects.all(), required=False, empty_label="Todos los geriátricos")
     obra_social = forms.ChoiceField(required=False, choices=[("", "Todas las coberturas")] + list(Residente.ObraSocial.choices))
 
     def clean_porcentaje(self):
         porcentaje = self.cleaned_data["porcentaje"]
+        if porcentaje is None:
+            return porcentaje
         if porcentaje <= Decimal("-100"):
             raise forms.ValidationError("El porcentaje debe dejar un monto mayor que cero.")
         return porcentaje
+
+    def clean(self):
+        cleaned_data = super().clean()
+        predefinido = cleaned_data.get("porcentaje_predefinido")
+        if predefinido:
+            cleaned_data["porcentaje"] = predefinido.porcentaje
+        elif cleaned_data.get("porcentaje") is None:
+            self.add_error("porcentaje", "Ingresá un porcentaje o elegí uno predefinido.")
+        return cleaned_data
 
 
 class EgresoCajaForm(forms.ModelForm):
@@ -83,3 +95,27 @@ class CategoriaCajaForm(forms.ModelForm):
     class Meta:
         model = CategoriaCaja
         fields = ("nombre", "activa")
+
+
+class ConfiguracionInstitucionalForm(forms.ModelForm):
+    class Meta:
+        model = ConfiguracionInstitucional
+        fields = ("nombre_institucion", "direccion", "telefono", "email", "cuit", "logo", "dia_vencimiento_defecto", "concepto_cuota_defecto", "moneda")
+
+
+class ObraSocialForm(forms.ModelForm):
+    class Meta:
+        model = ObraSocial
+        fields = ("nombre", "activa")
+
+
+class MedioPagoConfiguracionForm(forms.ModelForm):
+    class Meta:
+        model = MedioPagoConfiguracion
+        fields = ("nombre", "activo")
+
+
+class PorcentajeActualizacionForm(forms.ModelForm):
+    class Meta:
+        model = PorcentajeActualizacion
+        fields = ("porcentaje", "activo")

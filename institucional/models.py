@@ -343,6 +343,14 @@ class CajaCierre(models.Model):
 
 class ConfiguracionInstitucional(models.Model):
     nombre_institucion = models.CharField(max_length=150, default="Dulce Atardecer")
+    direccion = models.CharField(max_length=255, blank=True)
+    telefono = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    cuit = models.CharField(max_length=20, blank=True)
+    logo = models.FileField(upload_to="logos/", blank=True, null=True)
+    dia_vencimiento_defecto = models.PositiveSmallIntegerField(default=10)
+    concepto_cuota_defecto = models.CharField(max_length=150, default="Cuota mensual")
+    moneda = models.CharField(max_length=10, default="ARS")
     observaciones = models.TextField(blank=True)
     actualizado_en = models.DateTimeField(auto_now=True)
 
@@ -352,3 +360,42 @@ class ConfiguracionInstitucional(models.Model):
 
     def __str__(self):
         return self.nombre_institucion
+
+
+class ObraSocial(models.Model):
+    nombre = models.CharField(max_length=100, unique=True)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nombre"]
+        verbose_name = "obra social / prepaga"
+        verbose_name_plural = "obras sociales / prepagas"
+
+    def __str__(self):
+        return self.nombre
+
+
+class MedioPagoConfiguracion(models.Model):
+    nombre = models.CharField(max_length=50, unique=True)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nombre"]
+        verbose_name = "medio de pago"
+        verbose_name_plural = "medios de pago"
+
+    def __str__(self):
+        return self.nombre
+
+
+class PorcentajeActualizacion(models.Model):
+    porcentaje = models.DecimalField(max_digits=6, decimal_places=2, unique=True)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["porcentaje"]
+        verbose_name = "porcentaje de actualización"
+        verbose_name_plural = "porcentajes de actualización"
+
+    def __str__(self):
+        return f"{self.porcentaje}%"

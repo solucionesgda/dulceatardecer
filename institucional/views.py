@@ -10,8 +10,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import AjusteMontoForm, CategoriaCajaForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, PagoForm, PagoParcialForm
-from .models import CajaCierre, CajaMovimiento, CategoriaCaja, Geriatrico, Pago, PagoParcial, Residente
+from .forms import AjusteMontoForm, CategoriaCajaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PorcentajeActualizacionForm
+from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, PorcentajeActualizacion, Residente
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -235,6 +235,7 @@ class GenerarCuotasView(LoginRequiredMixin, TemplateView):
         if form.cleaned_data["geriatrico"]:
             residentes = residentes.filter(geriatrico=form.cleaned_data["geriatrico"])
         creados = existentes = sin_monto = 0
+        configuracion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
         for residente in residentes:
             if not residente.monto_mensual:
                 sin_monto += 1
@@ -243,7 +244,7 @@ class GenerarCuotasView(LoginRequiredMixin, TemplateView):
                 _, creado = Pago.objects.get_or_create(
                     residente=residente,
                     periodo=form.cleaned_data["periodo"],
-                    defaults={"concepto": "Cuota mensual", "monto": residente.monto_mensual, "fecha_vencimiento": form.cleaned_data["fecha_vencimiento"]},
+                    defaults={"concepto": configuracion.concepto_cuota_defecto, "monto": residente.monto_mensual, "fecha_vencimiento": form.cleaned_data["fecha_vencimiento"]},
                 )
                 if creado:
                     creados += 1
@@ -383,3 +384,26 @@ class CajaCierreView(LoginRequiredMixin, View):
         CajaCierre.objects.update_or_create(fecha=date.today(), defaults={**resumen, "cerrado_por": request.user})
         messages.success(request, "Cierre de caja generado correctamente.")
         return redirect("caja_list")
+
+
+class ConfiguracionView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/configuracion.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        configuracion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        context.update({"institucion_form": kwargs.get("institucion_form", ConfiguracionInstitucionalForm(instance=configuracion)), "obras": ObraSocial.objects.all(), "medios": MedioPagoConfiguracion.objects.all(), "porcentajes": PorcentajeActualizacion.objects.all(), "categorias": CategoriaCaja.objects.all(), "obra_form": ObraSocialForm(), "medio_form": MedioPagoConfiguracionForm(), "porcentaje_form": PorcentajeActualizacionForm(), "categoria_form": CategoriaCajaForm()})
+        return context
+
+    def post(self, request):
+        configuracion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        tipo = request.POST.get("tipo")
+        if tipo == "institucion":
+            form = ConfiguracionInstitucionalForm(request.POST, request.FILES, instance=configuracion)
+        elif tipo == "obra": form = ObraSocialForm(request.POST)
+        elif tipo == "medio": form = MedioPagoConfiguracionForm(request.POST)
+        elif tipo == "porcentaje": form = PorcentajeActualizacionForm(request.POST)
+        else: form = CategoriaCajaForm(request.POST)
+        if form.is_valid():
+            form.save(); messages.success(request, "Configuración guardada."); return redirect("configuracion")
+        return self.render_to_response(self.get_context_data(institucion_form=form if tipo == "institucion" else None))
