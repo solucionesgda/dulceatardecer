@@ -32,6 +32,14 @@ class AccesoTest(TestCase):
         self.assertEqual(response.context["residentes_activos"], 1)
         self.assertEqual(response.context["camas_disponibles"], 2)
 
+    def test_listado_residentes_permite_busqueda_y_filtros(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=3)
+        Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")
+        self.client.login(username="consulta", password="clave-segura")
+        response = self.client.get(reverse("residente_list"), {"q": "Pérez", "geriatrico": geriatrico.pk, "estado": Residente.Estado.ACTIVO})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ana")
+
 
 class GeriatricoTest(TestCase):
     def test_codigo_es_unico(self):

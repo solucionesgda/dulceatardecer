@@ -1,7 +1,7 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.db.models import Count, Q, Sum
 from django.urls import reverse_lazy
-from django.views.generic import CreateView, DeleteView, ListView, TemplateView, UpdateView
+from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
 from .forms import GeriatricoForm
 from .models import Geriatrico, Residente
 
@@ -65,3 +65,40 @@ class GeriatricoDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteVi
     template_name = "institucional/geriatrico_confirm_delete.html"
     permission_required = "institucional.delete_geriatrico"
     success_url = reverse_lazy("geriatrico_list")
+
+
+class ResidenteListView(LoginRequiredMixin, ListView):
+    model = Residente
+    template_name = "institucional/residente_list.html"
+
+    def get_queryset(self):
+        queryset = Residente.objects.select_related("geriatrico")
+        busqueda = self.request.GET.get("q", "").strip()
+        geriatrico = self.request.GET.get("geriatrico", "")
+        estado = self.request.GET.get("estado", "")
+        if busqueda:
+            queryset = queryset.filter(
+                Q(nombre__icontains=busqueda)
+                | Q(apellido__icontains=busqueda)
+                | Q(dni__icontains=busqueda)
+            )
+        if geriatrico:
+            queryset = queryset.filter(geriatrico_id=geriatrico)
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            "geriatrico_opciones": Geriatrico.objects.all(),
+            "estado_opciones": Residente.Estado.choices,
+            "filtros": self.request.GET,
+        })
+        return context
+
+
+class ResidenteDetailView(LoginRequiredMixin, DetailView):
+    model = Residente
+    template_name = "institucional/residente_detail.html"
+    queryset = Residente.objects.select_related("geriatrico")
