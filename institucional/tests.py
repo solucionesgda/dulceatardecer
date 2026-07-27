@@ -22,6 +22,16 @@ class AccesoTest(TestCase):
         self.assertEqual(self.client.get(reverse("geriatrico_list")).status_code, 200)
         self.assertEqual(self.client.get(reverse("geriatrico_create")).status_code, 403)
 
+    def test_panel_muestra_metricas_reales(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=3)
+        Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")
+        Residente.objects.create(geriatrico=geriatrico, nombre="Luis", apellido="Gómez", dni="87654321", fecha_ingreso="2026-01-01", contacto_familiar="3411234568", estado=Residente.Estado.TRASLADO)
+        self.client.login(username="consulta", password="clave-segura")
+        response = self.client.get(reverse("inicio"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["residentes_activos"], 1)
+        self.assertEqual(response.context["camas_disponibles"], 2)
+
 
 class GeriatricoTest(TestCase):
     def test_codigo_es_unico(self):

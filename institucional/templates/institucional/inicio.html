@@ -1,1 +1,20 @@
-{% extends 'base.html' %}{% block content %}<h1 class="h3">Inicio</h1><p class="text-muted">Base del sistema de gestión del geriátrico.</p>{% endblock %}
+{% extends 'base.html' %}
+
+{% block title %}Panel principal{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
+  <div><h1 class="h3 mb-1">Panel principal</h1><p class="text-muted mb-0">Resumen institucional de ocupación.</p></div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><span class="text-muted small">Residentes activos</span><div class="display-6">{{ residentes_activos }}</div></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><span class="text-muted small">Camas ocupadas</span><div class="display-6">{{ camas_ocupadas }}</div></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><span class="text-muted small">Camas disponibles</span><div class="display-6">{{ camas_disponibles }}</div></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card metric-card h-100"><div class="card-body"><span class="text-muted small">Capacidad total</span><div class="display-6">{{ capacidad_total }}</div></div></div></div>
+</div>
+
+<div class="card shadow-sm mb-4"><div class="card-body p-0"><div class="p-3 border-bottom"><h2 class="h5 mb-0">Ocupación por geriátrico</h2></div><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Geriátrico</th><th class="text-center">Residentes activos</th><th class="text-center">Ocupadas</th><th class="text-center">Disponibles</th><th class="text-center">Capacidad</th><th class="text-end">Ocupación</th></tr></thead><tbody>{% for item in geriatrico_estadisticas %}<tr><td>{{ item.geriatrico.nombre }}</td><td class="text-center">{{ item.ocupadas }}</td><td class="text-center">{{ item.ocupadas }}</td><td class="text-center">{{ item.disponibles }}</td><td class="text-center">{{ item.geriatrico.capacidad_total }}</td><td class="text-end"><div class="d-flex align-items-center justify-content-end gap-2"><div class="progress dashboard-progress"><div class="progress-bar" role="progressbar" style="width: {{ item.ocupacion }}%"></div></div><span>{{ item.ocupacion|floatformat:0 }}%</span></div></td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No hay geriátricos cargados.</td></tr>{% endfor %}</tbody></table></div></div>
+
+<h2 class="h5 mb-3">Accesos rápidos</h2><div class="row g-3"><div class="col-md-4"><a class="card quick-access h-100 text-decoration-none" href="{% url 'admin:institucional_residente_changelist' %}"><div class="card-body"><h3 class="h6">Residentes</h3><p class="text-muted mb-0">Administrar altas y ediciones.</p></div></a></div><div class="col-md-4"><a class="card quick-access h-100 text-decoration-none" href="{% url 'geriatrico_list' %}"><div class="card-body"><h3 class="h6">Geriátricos</h3><p class="text-muted mb-0">Consultar establecimientos y capacidad.</p></div></a></div><div class="col-md-4"><a class="card quick-access h-100 text-decoration-none" href="{% url 'admin:index' %}"><div class="card-body"><h3 class="h6">Administración</h3><p class="text-muted mb-0">Abrir el panel administrativo.</p></div></a></div></div>
+{% endblock %}
