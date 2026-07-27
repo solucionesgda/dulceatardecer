@@ -2,7 +2,7 @@ from django import forms
 from datetime import date
 from decimal import Decimal
 
-from .models import CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, PorcentajeActualizacion, Residente
+from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente
 
 
 class GeriatricoForm(forms.ModelForm):
@@ -119,3 +119,10 @@ class PorcentajeActualizacionForm(forms.ModelForm):
     class Meta:
         model = PorcentajeActualizacion
         fields = ("porcentaje", "activo")
+
+
+class PersonalForm(forms.ModelForm):
+    class Meta:
+        model = Personal
+        fields = ("nombre_completo", "dni", "cargo", "turno_habitual", "telefono", "cuil", "inicio_contrato", "estado", "observaciones")
+        widgets = {"inicio_contrato": forms.DateInput(attrs={"type": "date"}), "observaciones": forms.Textarea(attrs={"rows": 3})}

@@ -399,3 +399,62 @@ class PorcentajeActualizacion(models.Model):
 
     def __str__(self):
         return f"{self.porcentaje}%"
+
+
+class Personal(models.Model):
+    class Estado(models.TextChoices):
+        ACTIVO = "Activo", "Activo"
+        LICENCIA = "Licencia", "Licencia"
+        VACACIONES = "Vacaciones", "Vacaciones"
+        BAJA = "Baja", "Baja"
+
+    class Cargo(models.TextChoices):
+        ENFERMERO = "Enfermero/a", "Enfermero/a"
+        CUIDADOR = "Cuidador/a", "Cuidador/a"
+        MUCAMA = "Mucama", "Mucama"
+        COCINERO = "Cocinero/a", "Cocinero/a"
+        ADMINISTRATIVO = "Administrativo/a", "Administrativo/a"
+        OTRO = "Otro", "Otro"
+
+    nombre_completo = models.CharField(max_length=150)
+    dni = models.CharField(max_length=20, unique=True, validators=[RegexValidator(r"^\d+$", "El DNI solo puede contener números.")])
+    cargo = models.CharField(max_length=30, choices=Cargo.choices)
+    turno_habitual = models.CharField(max_length=10, choices=[("Mañana", "Mañana"), ("Tarde", "Tarde"), ("Noche", "Noche")])
+    telefono = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r"^\d+$", "El teléfono solo puede contener números.")])
+    cuil = models.CharField(max_length=30, blank=True)
+    inicio_contrato = models.DateField()
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ACTIVO)
+    observaciones = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["nombre_completo"]
+        verbose_name = "personal"
+        verbose_name_plural = "personal"
+
+    def __str__(self): return self.nombre_completo
+
+
+class GrillaTurnos(models.Model):
+    mes = models.PositiveSmallIntegerField()
+    anio = models.PositiveSmallIntegerField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["mes", "anio"], name="grilla_unica_por_mes")]
+
+
+class AsignacionTurno(models.Model):
+    class Codigo(models.TextChoices):
+        M = "M", "Mañana (7-15h)"
+        T = "T", "Tarde (15-23h)"
+        N = "N", "Noche (23-7h)"
+        F = "F", "Franco"
+        L = "L", "Licencia"
+        V = "V", "Vacaciones"
+
+    grilla = models.ForeignKey(GrillaTurnos, on_delete=models.CASCADE, related_name="asignaciones")
+    personal = models.ForeignKey(Personal, on_delete=models.CASCADE, related_name="turnos")
+    dia = models.PositiveSmallIntegerField()
+    codigo = models.CharField(max_length=1, choices=Codigo.choices, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["grilla", "personal", "dia"], name="turno_unico_por_dia")]

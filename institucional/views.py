@@ -1,5 +1,6 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from datetime import date, timedelta
+import calendar
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
@@ -10,8 +11,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import AjusteMontoForm, CategoriaCajaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PorcentajeActualizacionForm
-from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, PorcentajeActualizacion, Residente
+from .forms import AjusteMontoForm, CategoriaCajaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -407,3 +408,32 @@ class ConfiguracionView(LoginRequiredMixin, TemplateView):
         if form.is_valid():
             form.save(); messages.success(request, "Configuración guardada."); return redirect("configuracion")
         return self.render_to_response(self.get_context_data(institucion_form=form if tipo == "institucion" else None))
+
+
+class PersonalListView(LoginRequiredMixin, ListView):
+    model = Personal
+    template_name = "institucional/personal_list.html"
+    def get_queryset(self):
+        qs = Personal.objects.all(); estado = self.request.GET.get("estado", "")
+        return qs.filter(estado=estado) if estado else qs
+
+
+class PersonalCreateView(LoginRequiredMixin, CreateView):
+    model = Personal; form_class = PersonalForm; template_name = "institucional/personal_form.html"; success_url = reverse_lazy("personal_list")
+
+
+class TurnosView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/turnos.html"
+    def dispatch(self, request, *args, **kwargs):
+        self.mes = int(request.GET.get("mes", date.today().month)); self.anio = int(request.GET.get("anio", date.today().year)); return super().dispatch(request,*args,**kwargs)
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs); grilla = GrillaTurnos.objects.filter(mes=self.mes, anio=self.anio).first()
+        context.update({"mes": self.mes, "anio": self.anio, "dias": range(1, calendar.monthrange(self.anio,self.mes)[1]+1), "grilla": grilla, "personal": Personal.objects.filter(estado=Personal.Estado.ACTIVO), "codigos": AsignacionTurno.Codigo.choices})
+        return context
+    def post(self, request, *args, **kwargs):
+        grilla, _ = GrillaTurnos.objects.get_or_create(mes=self.mes, anio=self.anio)
+        for empleado in Personal.objects.filter(estado=Personal.Estado.ACTIVO):
+            for dia in range(1, calendar.monthrange(self.anio,self.mes)[1]+1):
+                codigo = request.POST.get(f"turno_{empleado.pk}_{dia}", "")
+                AsignacionTurno.objects.update_or_create(grilla=grilla, personal=empleado, dia=dia, defaults={"codigo": codigo})
+        messages.success(request, "Turnos actualizados."); return redirect(f"{reverse('turnos')}?mes={self.mes}&anio={self.anio}")
