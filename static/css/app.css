@@ -1,0 +1,1 @@
+body { background: #f7f8fa; } .sidebar { background: #243b53; min-height: 100vh; width: 250px; } .sidebar .nav-link { color: #d9e2ec; border-radius: .375rem; } .sidebar .nav-link:hover { background: #334e68; color: #fff; } .form-control, textarea { max-width: 42rem; } @media (max-width: 991px) { .sidebar { width: 100%; min-height: auto; } }
