@@ -2,7 +2,7 @@ from django import forms
 from datetime import date
 from decimal import Decimal
 
-from .models import CajaMovimiento, Geriatrico, Pago, PagoParcial, Residente
+from .models import CajaMovimiento, CategoriaCaja, Geriatrico, Pago, PagoParcial, Residente
 
 
 class GeriatricoForm(forms.ModelForm):
@@ -73,3 +73,13 @@ class EgresoCajaForm(forms.ModelForm):
         model = CajaMovimiento
         fields = ("fecha", "geriatrico", "categoria", "descripcion", "importe", "medio_pago", "observaciones")
         widgets = {"fecha": forms.DateInput(attrs={"type": "date"}), "observaciones": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["categoria"].queryset = CategoriaCaja.objects.filter(activa=True)
+
+
+class CategoriaCajaForm(forms.ModelForm):
+    class Meta:
+        model = CategoriaCaja
+        fields = ("nombre", "activa")

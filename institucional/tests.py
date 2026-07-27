@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.urls import reverse
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import CajaMovimiento, Geriatrico, Pago, PagoParcial, Residente
+from .models import CajaCierre, CajaMovimiento, CategoriaCaja, Geriatrico, Pago, PagoParcial, Residente
 
 
 class AccesoTest(TestCase):
@@ -138,9 +138,21 @@ class AccesoTest(TestCase):
         residente = self.crear_residente_con_monto("10345678", "1000.00")
         pago = Pago.objects.create(residente=residente, periodo="2027-03", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
         PagoParcial.objects.create(pago=pago, monto=Decimal("100.00"), fecha_pago=date.today())
-        egreso = CajaMovimiento(tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=residente.geriatrico, categoria="Servicios", importe=Decimal("101.00"))
+        categoria = CategoriaCaja.objects.create(nombre="Servicios")
+        egreso = CajaMovimiento(tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=residente.geriatrico, categoria=categoria, importe=Decimal("101.00"))
         with self.assertRaises(ValidationError):
             egreso.full_clean()
+
+    def test_cierre_caja_resume_movimientos_del_dia(self):
+        residente = self.crear_residente_con_monto("11345678", "1000.00")
+        pago = Pago.objects.create(residente=residente, periodo="2027-04", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        PagoParcial.objects.create(pago=pago, monto=Decimal("100.00"), fecha_pago=date.today())
+        categoria = CategoriaCaja.objects.create(nombre="Farmacia")
+        CajaMovimiento.objects.create(tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=residente.geriatrico, categoria=categoria, importe=Decimal("20.00"))
+        self.client.login(username="consulta", password="clave-segura")
+        self.client.post(reverse("caja_cierre"))
+        cierre = CajaCierre.objects.get(fecha=date.today())
+        self.assertEqual(cierre.saldo_final, Decimal("80.00"))
 
 
 class GeriatricoTest(TestCase):

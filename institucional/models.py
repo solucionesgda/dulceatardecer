@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -241,6 +241,19 @@ class PagoParcial(models.Model):
         return f"{self.pago} · {self.monto}"
 
 
+class CategoriaCaja(models.Model):
+    nombre = models.CharField(max_length=100, unique=True)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nombre"]
+        verbose_name = "categoría de caja"
+        verbose_name_plural = "categorías de caja"
+
+    def __str__(self):
+        return self.nombre
+
+
 class CajaMovimiento(models.Model):
     class Tipo(models.TextChoices):
         INGRESO = "Ingreso", "Ingreso"
@@ -252,7 +265,7 @@ class CajaMovimiento(models.Model):
     residente = models.ForeignKey(Residente, on_delete=models.PROTECT, blank=True, null=True, related_name="movimientos_caja")
     pago = models.ForeignKey(Pago, on_delete=models.PROTECT, blank=True, null=True, related_name="movimientos_caja")
     abono = models.OneToOneField(PagoParcial, on_delete=models.PROTECT, blank=True, null=True, related_name="movimiento_caja")
-    categoria = models.CharField(max_length=100, blank=True)
+    categoria = models.ForeignKey(CategoriaCaja, on_delete=models.PROTECT, blank=True, null=True, related_name="movimientos")
     descripcion = models.CharField(max_length=255, blank=True)
     importe = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     medio_pago = models.CharField(max_length=30, choices=Pago.MedioPago.choices, blank=True)
@@ -267,6 +280,8 @@ class CajaMovimiento(models.Model):
     def clean(self):
         super().clean()
         if self.tipo == self.Tipo.EGRESO:
+            if not self.categoria_id:
+                raise ValidationError({"categoria": "Seleccioná una categoría para el egreso."})
             saldo = self.saldo_actual(excluir_pk=self.pk)
             if self.importe > saldo:
                 raise ValidationError({"importe": "El egreso no puede superar el saldo disponible."})
@@ -290,7 +305,6 @@ class CajaMovimiento(models.Model):
                 "geriatrico": abono.pago.residente.geriatrico,
                 "residente": abono.pago.residente,
                 "pago": abono.pago,
-                "categoria": "Cuota residente",
                 "descripcion": f"Abono de {abono.pago.residente}",
                 "importe": abono.monto,
                 "medio_pago": abono.medio_pago,
@@ -298,6 +312,32 @@ class CajaMovimiento(models.Model):
                 "usuario": abono.usuario,
             },
         )
+
+    @classmethod
+    def resumen_fecha(cls, fecha):
+        movimientos = cls.objects.filter(fecha=fecha)
+        ingresos = movimientos.filter(tipo=cls.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        egresos = movimientos.filter(tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        saldo_inicial = cls.objects.filter(fecha__lt=fecha, tipo=cls.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        saldo_inicial -= cls.objects.filter(fecha__lt=fecha, tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        return {"saldo_inicial": saldo_inicial, "ingresos": ingresos, "egresos": egresos, "saldo_final": saldo_inicial + ingresos - egresos, "cantidad_cobros": movimientos.filter(tipo=cls.Tipo.INGRESO).count(), "cantidad_egresos": movimientos.filter(tipo=cls.Tipo.EGRESO).count()}
+
+
+class CajaCierre(models.Model):
+    fecha = models.DateField(unique=True)
+    saldo_inicial = models.DecimalField(max_digits=12, decimal_places=2)
+    ingresos = models.DecimalField(max_digits=12, decimal_places=2)
+    egresos = models.DecimalField(max_digits=12, decimal_places=2)
+    saldo_final = models.DecimalField(max_digits=12, decimal_places=2)
+    cantidad_cobros = models.PositiveIntegerField()
+    cantidad_egresos = models.PositiveIntegerField()
+    cerrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True)
+    cerrado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-fecha"]
+        verbose_name = "cierre de caja"
+        verbose_name_plural = "cierres de caja"
 
 
 class ConfiguracionInstitucional(models.Model):

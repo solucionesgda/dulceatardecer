@@ -2,7 +2,7 @@ from django.contrib import admin
 from django import forms
 from django.http import JsonResponse
 from django.urls import path, reverse
-from .models import CajaMovimiento, ConfiguracionInstitucional, Geriatrico, Pago, PagoParcial, Residente
+from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, Pago, PagoParcial, Residente
 
 
 @admin.register(Geriatrico)
@@ -110,6 +110,19 @@ class CajaMovimientoAdmin(admin.ModelAdmin):
     list_filter = ("tipo", "geriatrico", "fecha")
     search_fields = ("residente__nombre", "residente__apellido", "descripcion")
     readonly_fields = ("tipo", "residente", "pago", "abono", "usuario")
+
+
+@admin.register(CategoriaCaja)
+class CategoriaCajaAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "activa")
+    list_filter = ("activa",)
+    search_fields = ("nombre",)
+
+
+@admin.register(CajaCierre)
+class CajaCierreAdmin(admin.ModelAdmin):
+    list_display = ("fecha", "saldo_inicial", "ingresos", "egresos", "saldo_final", "cantidad_cobros", "cantidad_egresos")
+    readonly_fields = ("fecha", "saldo_inicial", "ingresos", "egresos", "saldo_final", "cantidad_cobros", "cantidad_egresos", "cerrado_por", "cerrado_en")
 
 
 @admin.register(ConfiguracionInstitucional)

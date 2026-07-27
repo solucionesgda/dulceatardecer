@@ -1,4 +1,5 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
@@ -9,8 +10,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import AjusteMontoForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, PagoForm, PagoParcialForm
-from .models import CajaMovimiento, Geriatrico, Pago, PagoParcial, Residente
+from .forms import AjusteMontoForm, CategoriaCajaForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, PagoForm, PagoParcialForm
+from .models import CajaCierre, CajaMovimiento, CategoriaCaja, Geriatrico, Pago, PagoParcial, Residente
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -297,7 +298,19 @@ class CajaListView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         ingresos = CajaMovimiento.objects.filter(tipo=CajaMovimiento.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
         egresos = CajaMovimiento.objects.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
-        context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos})
+        hoy = date.today()
+        resumen_dia = CajaMovimiento.resumen_fecha(hoy)
+        resumen_dia["saldo_final"] = resumen_dia["ingresos"] - resumen_dia["egresos"]
+        resumen_dia["saldo_inicial"] = Decimal("0.00")
+        inicio_mes = hoy.replace(day=1)
+        movimientos_mes = CajaMovimiento.objects.filter(fecha__gte=inicio_mes, fecha__lte=hoy)
+        ingresos_mes = movimientos_mes.filter(tipo=CajaMovimiento.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        egresos_mes = movimientos_mes.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        categorias = list(movimientos_mes.filter(tipo=CajaMovimiento.Tipo.EGRESO).values("categoria__nombre").annotate(total=Sum("importe")).order_by("-total"))
+        maximo = max((item["total"] for item in categorias), default=Decimal("0.00"))
+        for item in categorias:
+            item["porcentaje"] = item["total"] / maximo * 100 if maximo else 0
+        context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos, "resumen_dia": resumen_dia, "ingresos_mes": ingresos_mes, "egresos_mes": egresos_mes, "resultado_mes": ingresos_mes - egresos_mes, "egresos_categoria": categorias})
         return context
 
 
@@ -316,3 +329,29 @@ class EgresoCajaCreateView(LoginRequiredMixin, CreateView):
             form.add_error("importe", error.message_dict.get("importe", ["No se pudo registrar el egreso."])[0])
             return self.form_invalid(form)
         return super().form_valid(form)
+
+
+class CategoriaCajaListView(LoginRequiredMixin, ListView):
+    model = CategoriaCaja
+    template_name = "institucional/categoria_caja_list.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["form"] = kwargs.get("form", CategoriaCajaForm())
+        return context
+
+    def post(self, request, *args, **kwargs):
+        form = CategoriaCajaForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Categoría guardada.")
+            return redirect("categoria_caja_list")
+        return self.render_to_response(self.get_context_data(form=form))
+
+
+class CajaCierreView(LoginRequiredMixin, View):
+    def post(self, request):
+        resumen = CajaMovimiento.resumen_fecha(date.today())
+        CajaCierre.objects.update_or_create(fecha=date.today(), defaults={**resumen, "cerrado_por": request.user})
+        messages.success(request, "Cierre de caja generado correctamente.")
+        return redirect("caja_list")
