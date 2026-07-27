@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.urls import reverse
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import Geriatrico, Pago, Residente
+from .models import Geriatrico, Pago, PagoParcial, Residente
 
 
 class AccesoTest(TestCase):
@@ -58,6 +58,73 @@ class AccesoTest(TestCase):
         residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")
         pago = Pago.objects.create(residente=residente, periodo="2026-07", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today(), fecha_pago=date.today())
         self.assertEqual(pago.estado, Pago.Estado.PAGADO)
+
+    def crear_residente_con_monto(self, dni, monto):
+        geriatrico, _ = Geriatrico.objects.get_or_create(nombre="Geri pagos", codigo="GP", defaults={"direccion": "Calle 1", "capacidad_total": 10})
+        return Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido=dni, dni=dni, fecha_ingreso="2026-01-01", contacto_familiar="3411234567", monto_mensual=Decimal(monto))
+
+    def test_pago_completo(self):
+        residente = self.crear_residente_con_monto("12345678", "1000.00")
+        pago = Pago.objects.create(residente=residente, periodo="2026-08", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        PagoParcial.objects.create(pago=pago, monto=Decimal("1000.00"), fecha_pago=date.today())
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, Pago.Estado.PAGADO)
+        self.assertEqual(pago.saldo_pendiente, Decimal("0.00"))
+
+    def test_pago_parcial_y_varios_abonos(self):
+        residente = self.crear_residente_con_monto("22345678", "1000.00")
+        pago = Pago.objects.create(residente=residente, periodo="2026-08", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        PagoParcial.objects.create(pago=pago, monto=Decimal("300.00"), fecha_pago=date.today())
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, Pago.Estado.PARCIAL)
+        PagoParcial.objects.create(pago=pago, monto=Decimal("700.00"), fecha_pago=date.today())
+        self.assertEqual(pago.total_abonado, Decimal("1000.00"))
+        self.assertEqual(pago.saldo_pendiente, Decimal("0.00"))
+
+    def test_rechaza_abono_superior_al_saldo(self):
+        residente = self.crear_residente_con_monto("32345678", "1000.00")
+        pago = Pago.objects.create(residente=residente, periodo="2026-08", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        PagoParcial.objects.create(pago=pago, monto=Decimal("700.00"), fecha_pago=date.today())
+        with self.assertRaises(ValidationError):
+            PagoParcial.objects.create(pago=pago, monto=Decimal("400.00"), fecha_pago=date.today())
+
+    def test_montos_diferentes_por_residente(self):
+        uno = self.crear_residente_con_monto("42345678", "1000.00")
+        dos = self.crear_residente_con_monto("52345678", "2000.00")
+        self.assertNotEqual(uno.monto_mensual, dos.monto_mensual)
+
+    def test_ajuste_porcentual_no_modifica_pagos_existentes(self):
+        residente = self.crear_residente_con_monto("62345678", "1000.00")
+        pago = Pago.objects.create(residente=residente, periodo="2026-08", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        self.client.login(username="consulta", password="clave-segura")
+        response = self.client.post(reverse("ajuste_montos"), {"porcentaje": "10", "accion": "confirmar"})
+        residente.refresh_from_db()
+        pago.refresh_from_db()
+        self.assertRedirects(response, reverse("pago_list"))
+        self.assertEqual(residente.monto_mensual, Decimal("1100.00"))
+        self.assertEqual(pago.monto, Decimal("1000.00"))
+
+    def test_generacion_mensual_sin_duplicados(self):
+        residente = self.crear_residente_con_monto("72345678", "1500.00")
+        self.client.login(username="consulta", password="clave-segura")
+        datos = {"periodo": "2026-09", "fecha_vencimiento": "2026-09-10", "geriatrico": ""}
+        self.client.post(reverse("generar_cuotas"), datos)
+        self.client.post(reverse("generar_cuotas"), datos)
+        self.assertEqual(Pago.objects.filter(residente=residente, periodo="2026-09").count(), 1)
+
+    def test_estados_pendiente_parcial_pagado_y_vencido(self):
+        residente = self.crear_residente_con_monto("82345678", "1000.00")
+        pendiente = Pago.objects.create(residente=residente, periodo="2026-10", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        parcial = Pago.objects.create(residente=residente, periodo="2026-11", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        PagoParcial.objects.create(pago=parcial, monto=Decimal("100.00"), fecha_pago=date.today())
+        pagado = Pago.objects.create(residente=residente, periodo="2026-12", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        PagoParcial.objects.create(pago=pagado, monto=Decimal("1000.00"), fecha_pago=date.today())
+        vencido = Pago.objects.create(residente=residente, periodo="2027-01", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today() - timedelta(days=1))
+        self.assertEqual(pendiente.estado, Pago.Estado.PENDIENTE)
+        parcial.refresh_from_db(); pagado.refresh_from_db(); vencido.refresh_from_db()
+        self.assertEqual(parcial.estado, Pago.Estado.PARCIAL)
+        self.assertEqual(pagado.estado, Pago.Estado.PAGADO)
+        self.assertEqual(vencido.estado, Pago.Estado.VENCIDO)
 
 
 class GeriatricoTest(TestCase):

@@ -1,9 +1,16 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from decimal import Decimal, ROUND_HALF_UP
+
+from django.contrib import messages
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
-from django.urls import reverse_lazy
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse, reverse_lazy
+from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import GeriatricoForm
-from .models import Geriatrico, Pago, Residente
+from .forms import AjusteMontoForm, GenerarCuotasForm, GeriatricoForm, PagoForm, PagoParcialForm
+from .models import Geriatrico, Pago, PagoParcial, Residente
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -138,3 +145,130 @@ class PagoListView(LoginRequiredMixin, ListView):
             "filtros": self.request.GET,
         })
         return context
+
+
+class PagoCreateView(LoginRequiredMixin, CreateView):
+    model = Pago
+    form_class = PagoForm
+    template_name = "institucional/pago_form.html"
+
+    def get_initial(self):
+        initial = super().get_initial()
+        residente = self.request.GET.get("residente")
+        if residente:
+            initial["residente"] = residente
+        return initial
+
+    def get_success_url(self):
+        return reverse("pago_detail", kwargs={"pk": self.object.pk})
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["montos_residentes"] = {
+            str(residente.pk): str(residente.monto_mensual or "")
+            for residente in Residente.objects.only("pk", "monto_mensual")
+        }
+        return context
+
+
+class PagoUpdateView(LoginRequiredMixin, UpdateView):
+    model = Pago
+    form_class = PagoForm
+    template_name = "institucional/pago_form.html"
+
+    def get_success_url(self):
+        return reverse("pago_detail", kwargs={"pk": self.object.pk})
+
+
+class PagoDetailView(LoginRequiredMixin, DetailView):
+    model = Pago
+    template_name = "institucional/pago_detail.html"
+    queryset = Pago.objects.select_related("residente__geriatrico").prefetch_related("abonos")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["abono_form"] = kwargs.get("abono_form", PagoParcialForm())
+        return context
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        form = PagoParcialForm(request.POST)
+        if form.is_valid():
+            abono = form.save(commit=False)
+            abono.pago = self.object
+            try:
+                abono.save()
+            except ValidationError as error:
+                form.add_error("monto", error.message_dict.get("monto", ["No se pudo registrar el abono."])[0])
+            else:
+                messages.success(request, "Abono registrado correctamente.")
+                return redirect("pago_detail", pk=self.object.pk)
+        return self.render_to_response(self.get_context_data(abono_form=form))
+
+
+class GenerarCuotasView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/generar_cuotas.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["form"] = kwargs.get("form", GenerarCuotasForm())
+        return context
+
+    def post(self, request, *args, **kwargs):
+        form = GenerarCuotasForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+        residentes = Residente.objects.filter(estado=Residente.Estado.ACTIVO)
+        if form.cleaned_data["geriatrico"]:
+            residentes = residentes.filter(geriatrico=form.cleaned_data["geriatrico"])
+        creados = existentes = sin_monto = 0
+        for residente in residentes:
+            if not residente.monto_mensual:
+                sin_monto += 1
+                continue
+            try:
+                _, creado = Pago.objects.get_or_create(
+                    residente=residente,
+                    periodo=form.cleaned_data["periodo"],
+                    defaults={"concepto": "Cuota mensual", "monto": residente.monto_mensual, "fecha_vencimiento": form.cleaned_data["fecha_vencimiento"]},
+                )
+                if creado:
+                    creados += 1
+                else:
+                    existentes += 1
+            except IntegrityError:
+                existentes += 1
+        messages.success(request, f"Cuotas creadas: {creados}. Ya existentes: {existentes}. Sin monto configurado: {sin_monto}.")
+        return redirect("pago_list")
+
+
+class AjusteMontoView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/ajuste_montos.html"
+
+    def residentes_filtrados(self, data):
+        residentes = Residente.objects.filter(estado=Residente.Estado.ACTIVO, monto_mensual__isnull=False)
+        if data.get("geriatrico"):
+            residentes = residentes.filter(geriatrico=data["geriatrico"])
+        if data.get("obra_social"):
+            residentes = residentes.filter(obra_social=data["obra_social"])
+        return residentes
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({"form": kwargs.get("form", AjusteMontoForm()), "vista_previa": kwargs.get("vista_previa", [])})
+        return context
+
+    def post(self, request, *args, **kwargs):
+        form = AjusteMontoForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+        residentes = self.residentes_filtrados(form.cleaned_data)
+        factor = Decimal("1") + form.cleaned_data["porcentaje"] / Decimal("100")
+        vista_previa = [(residente, (residente.monto_mensual * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) for residente in residentes]
+        if request.POST.get("accion") == "confirmar":
+            for residente, nuevo_monto in vista_previa:
+                residente.monto_mensual = nuevo_monto
+                residente.save(update_fields=["monto_mensual"])
+            messages.success(request, f"Se actualizaron {len(vista_previa)} montos mensuales.")
+            return redirect("pago_list")
+        return self.render_to_response(self.get_context_data(form=form, vista_previa=vista_previa))

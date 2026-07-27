@@ -2,7 +2,7 @@ from django.contrib import admin
 from django import forms
 from django.http import JsonResponse
 from django.urls import path, reverse
-from .models import ConfiguracionInstitucional, Geriatrico, Pago, Residente
+from .models import ConfiguracionInstitucional, Geriatrico, Pago, PagoParcial, Residente
 
 
 @admin.register(Geriatrico)
@@ -79,10 +79,10 @@ class ResidenteAdmin(admin.ModelAdmin):
 
 @admin.register(Pago)
 class PagoAdmin(admin.ModelAdmin):
-    list_display = ("residente", "geriatrico", "periodo", "concepto", "monto", "fecha_vencimiento", "estado")
     list_filter = ("residente__geriatrico", "estado", "periodo")
     search_fields = ("residente__nombre", "residente__apellido", "residente__dni")
     readonly_fields = ("estado",)
+    list_display = ("residente", "geriatrico", "periodo", "concepto", "monto", "total_abonado", "saldo_pendiente", "fecha_vencimiento", "estado")
 
     @admin.display(description="Geriátrico", ordering="residente__geriatrico__nombre")
     def geriatrico(self, pago):
@@ -91,6 +91,12 @@ class PagoAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         Pago.actualizar_vencidos()
         return super().get_queryset(request).select_related("residente__geriatrico")
+
+
+@admin.register(PagoParcial)
+class PagoParcialAdmin(admin.ModelAdmin):
+    list_display = ("pago", "monto", "fecha_pago", "medio_pago")
+    search_fields = ("pago__residente__nombre", "pago__residente__apellido", "pago__residente__dni")
 
 
 @admin.register(ConfiguracionInstitucional)

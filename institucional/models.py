@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
+from django.db.models import Sum
 
 
 class Geriatrico(models.Model):
@@ -85,6 +86,7 @@ class Residente(models.Model):
     movilidad = models.CharField(max_length=30, choices=Movilidad.choices, default=Movilidad.INDEPENDIENTE)
     observaciones = models.TextField(blank=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ACTIVO)
+    monto_mensual = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True, validators=[MinValueValidator(Decimal("0.01"))])
 
     class Meta:
         ordering = ["apellido", "nombre"]
@@ -132,6 +134,7 @@ class Residente(models.Model):
 class Pago(models.Model):
     class Estado(models.TextChoices):
         PENDIENTE = "Pendiente", "Pendiente"
+        PARCIAL = "Parcial", "Parcial"
         PAGADO = "Pagado", "Pagado"
         VENCIDO = "Vencido", "Vencido"
 
@@ -155,27 +158,84 @@ class Pago(models.Model):
         ordering = ["-periodo", "residente__apellido", "residente__nombre"]
         verbose_name = "pago"
         verbose_name_plural = "pagos"
+        constraints = [models.UniqueConstraint(fields=["residente", "periodo"], name="pago_unico_por_residente_y_periodo")]
 
     def __str__(self):
         return f"{self.residente} · {self.periodo} · {self.concepto}"
 
+    @property
+    def total_abonado(self):
+        if not self.pk:
+            return Decimal("0.00")
+        return self.abonos.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+
+    @property
+    def saldo_pendiente(self):
+        return max(self.monto - self.total_abonado, Decimal("0.00"))
+
     def calcular_estado(self):
-        if self.fecha_pago:
+        if self.total_abonado >= self.monto:
             return self.Estado.PAGADO
-        if self.fecha_vencimiento < date.today():
+        if self.saldo_pendiente > 0 and self.fecha_vencimiento < date.today():
             return self.Estado.VENCIDO
+        if self.total_abonado > 0:
+            return self.Estado.PARCIAL
         return self.Estado.PENDIENTE
 
     def save(self, *args, **kwargs):
-        self.estado = self.calcular_estado()
         super().save(*args, **kwargs)
+        if self.fecha_pago and not self.abonos.exists():
+            PagoParcial.objects.create(
+                pago=self, monto=self.monto, fecha_pago=self.fecha_pago,
+                medio_pago=self.medio_pago, observaciones=self.observaciones,
+            )
+        self.recalcular_estado()
+
+    def clean(self):
+        super().clean()
+        if self.pk and self.monto < self.total_abonado:
+            raise ValidationError({"monto": "El monto no puede ser menor al total ya abonado."})
+
+    def recalcular_estado(self):
+        self.estado = self.calcular_estado()
+        if self.pk:
+            Pago.objects.filter(pk=self.pk).update(estado=self.estado)
 
     @classmethod
     def actualizar_vencidos(cls):
-        cls.objects.filter(
-            fecha_pago__isnull=True,
-            fecha_vencimiento__lt=date.today(),
-        ).exclude(estado=cls.Estado.VENCIDO).update(estado=cls.Estado.VENCIDO)
+        for pago in cls.objects.exclude(estado=cls.Estado.PAGADO):
+            pago.recalcular_estado()
+
+
+class PagoParcial(models.Model):
+    pago = models.ForeignKey(Pago, on_delete=models.CASCADE, related_name="abonos")
+    monto = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    fecha_pago = models.DateField(default=date.today)
+    medio_pago = models.CharField(max_length=30, choices=Pago.MedioPago.choices, blank=True)
+    observaciones = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["fecha_pago", "pk"]
+        verbose_name = "abono"
+        verbose_name_plural = "abonos"
+
+    def clean(self):
+        super().clean()
+        if self.pago_id:
+            anteriores = PagoParcial.objects.filter(pago_id=self.pago_id)
+            if self.pk:
+                anteriores = anteriores.exclude(pk=self.pk)
+            abonado = anteriores.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+            if abonado + self.monto > self.pago.monto:
+                raise ValidationError({"monto": "El importe no puede superar el saldo pendiente."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+        self.pago.recalcular_estado()
+
+    def __str__(self):
+        return f"{self.pago} · {self.monto}"
 
 
 class ConfiguracionInstitucional(models.Model):
