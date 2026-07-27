@@ -1,4 +1,5 @@
 from django.contrib.auth.models import Group, Permission, User
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 from .models import Geriatrico
@@ -24,6 +25,15 @@ class AccesoTest(TestCase):
 
 class GeriatricoTest(TestCase):
     def test_codigo_es_unico(self):
-        Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_camas=10)
+        Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_camas=10, capacidad_total=10)
         with self.assertRaises(Exception):
-            Geriatrico.objects.create(nombre="Geri 2", codigo="G1", direccion="Calle 2", capacidad_camas=12)
+            Geriatrico.objects.create(nombre="Geri 2", codigo="G1", direccion="Calle 2", capacidad_camas=12, capacidad_total=12)
+
+    def test_calcula_camas_disponibles(self):
+        geriatrico = Geriatrico(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_camas=10, capacidad_total=10, camas_ocupadas=4)
+        self.assertEqual(geriatrico.camas_disponibles, 6)
+
+    def test_no_permite_ocupacion_mayor_a_capacidad(self):
+        geriatrico = Geriatrico(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_camas=10, capacidad_total=10, camas_ocupadas=11)
+        with self.assertRaises(ValidationError):
+            geriatrico.full_clean()

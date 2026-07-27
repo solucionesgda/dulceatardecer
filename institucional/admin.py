@@ -4,7 +4,7 @@ from .models import ConfiguracionInstitucional, Geriatrico
 
 @admin.register(Geriatrico)
 class GeriatricoAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "codigo", "capacidad_camas", "activo")
+    list_display = ("nombre", "capacidad_total", "camas_ocupadas", "camas_disponibles", "activo")
     list_filter = ("activo",)
     search_fields = ("nombre", "codigo", "direccion")
 
