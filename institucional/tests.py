@@ -53,3 +53,9 @@ class GeriatricoTest(TestCase):
         residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="1", fecha_ingreso="2026-01-01")
         with self.assertRaises(ValidationError):
             residente.full_clean()
+
+    def test_otra_obra_social_requiere_nombre(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="1", fecha_ingreso="2026-01-01", contacto_familiar="Familiar", obra_social=Residente.ObraSocial.OTRA)
+        with self.assertRaises(ValidationError):
+            residente.full_clean()
