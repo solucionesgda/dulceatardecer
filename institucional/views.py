@@ -5,16 +5,17 @@ import json
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
+from django.contrib.auth import login
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import AjusteMontoForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente, Tarea
+from .forms import ActivarCuentaForm, AjusteMontoForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import enviar_pdf, excel_response, pdf_response
 
 
@@ -152,6 +153,51 @@ class PersonalActualMixin:
             return self.request.user.perfil_personal
         except Personal.DoesNotExist:
             return None
+
+
+class ActivarCuentaView(View):
+    template_name = "institucional/activar_cuenta.html"
+
+    def invitacion_valida(self, token):
+        invitacion = get_object_or_404(InvitacionPersonal.objects.select_related("personal"), token=token)
+        if not invitacion.vigente or invitacion.personal.usuario_id:
+            return None
+        return invitacion
+
+    def get(self, request, token):
+        invitacion = self.invitacion_valida(token)
+        if not invitacion:
+            return render(request, self.template_name, {"invitacion_invalida": True}, status=400)
+        return render(request, self.template_name, {"invitacion": invitacion, "form": ActivarCuentaForm()})
+
+    def post(self, request, token):
+        invitacion = self.invitacion_valida(token)
+        if not invitacion:
+            return render(request, self.template_name, {"invitacion_invalida": True}, status=400)
+        form = ActivarCuentaForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"invitacion": invitacion, "form": form})
+        with transaction.atomic():
+            usuario = form.save(commit=False)
+            usuario.email = form.cleaned_data["email"]
+            usuario.is_staff = False
+            usuario.save()
+            invitacion.personal.usuario = usuario
+            invitacion.personal.save(update_fields=("usuario",))
+            invitacion.utilizada_en = timezone.now()
+            invitacion.save(update_fields=("utilizada_en",))
+        login(request, usuario)
+        messages.success(request, "Tu cuenta fue activada correctamente.")
+        return redirect("tarea_list")
+
+
+class MiPerfilView(LoginRequiredMixin, PersonalActualMixin, TemplateView):
+    template_name = "institucional/mi_perfil.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["personal"] = self.personal_actual()
+        return context
 
 
 class TareasListView(LoginRequiredMixin, PersonalActualMixin, ListView):

@@ -4,9 +4,10 @@ from django.core import mail
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
 
 
 class AccesoTest(TestCase):
@@ -277,6 +278,53 @@ class TareasTest(TestCase):
         administrador = User.objects.create_user("admin-tareas", password="clave-segura", is_staff=True)
         self.client.login(username="admin-tareas", password="clave-segura")
         self.assertEqual(self.client.get(reverse("tarea_panel")).status_code, 200)
+
+
+class InvitacionesPersonalTest(TestCase):
+    def crear_personal(self, dni="55666777"):
+        return Personal.objects.create(nombre_completo="Clara Empleada", dni=dni, cargo=Personal.Cargo.CUIDADOR, turno_habitual="Mañana", inicio_contrato=date.today())
+
+    def test_creacion_de_invitacion(self):
+        personal = self.crear_personal()
+        invitacion = InvitacionPersonal.objects.create(personal=personal)
+        self.assertTrue(invitacion.vigente)
+        self.assertEqual(invitacion.personal, personal)
+
+    def test_activacion_correcta_vincula_cuenta(self):
+        personal = self.crear_personal()
+        invitacion = InvitacionPersonal.objects.create(personal=personal)
+        response = self.client.post(reverse("activar_cuenta", args=[invitacion.token]), {"username": "clara", "email": "clara@example.test", "password1": "ClaveSegura1", "password2": "ClaveSegura1"})
+        self.assertRedirects(response, reverse("tarea_list"))
+        personal.refresh_from_db(); invitacion.refresh_from_db()
+        self.assertEqual(personal.usuario.username, "clara")
+        self.assertFalse(personal.usuario.is_staff)
+        self.assertIsNotNone(invitacion.utilizada_en)
+
+    def test_token_vencido_es_rechazado(self):
+        personal = self.crear_personal()
+        invitacion = InvitacionPersonal.objects.create(personal=personal, vence_en=timezone.now() - timedelta(minutes=1))
+        self.assertEqual(self.client.get(reverse("activar_cuenta", args=[invitacion.token])).status_code, 400)
+
+    def test_token_no_se_puede_reutilizar(self):
+        personal = self.crear_personal()
+        invitacion = InvitacionPersonal.objects.create(personal=personal, utilizada_en=timezone.now())
+        self.assertEqual(self.client.get(reverse("activar_cuenta", args=[invitacion.token])).status_code, 400)
+
+    def test_no_permite_invitacion_para_personal_con_usuario(self):
+        usuario = User.objects.create_user("cuenta-activa", password="clave-segura")
+        personal = self.crear_personal(); personal.usuario = usuario; personal.save()
+        invitacion = InvitacionPersonal(personal=personal)
+        with self.assertRaises(ValidationError):
+            invitacion.full_clean()
+
+    def test_empleada_activada_tiene_permisos_limitados(self):
+        personal = self.crear_personal()
+        invitacion = InvitacionPersonal.objects.create(personal=personal)
+        self.client.post(reverse("activar_cuenta", args=[invitacion.token]), {"username": "clara", "email": "clara@example.test", "password1": "ClaveSegura1", "password2": "ClaveSegura1"})
+        self.assertEqual(self.client.get(reverse("tarea_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("norma_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("residente_list")).status_code, 403)
+        self.assertEqual(self.client.get("/admin/").status_code, 403)
 
 
 class GeriatricoTest(TestCase):

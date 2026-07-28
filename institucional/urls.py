@@ -1,10 +1,12 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AjusteMontoView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, NormaMarcarLeidaView, NormasListView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
+from .views import ActivarCuentaView, AjusteMontoView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, NormaMarcarLeidaView, NormasListView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
     path("login/", auth_views.LoginView.as_view(template_name="registration/login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("activar-cuenta/<uuid:token>/", ActivarCuentaView.as_view(), name="activar_cuenta"),
+    path("mi-perfil/", MiPerfilView.as_view(), name="mi_perfil"),
     path("", InicioView.as_view(), name="inicio"),
     path("residentes/", ResidenteListView.as_view(), name="residente_list"),
     path("residentes/exportar/<str:formato>/", ExportarResidentesView.as_view(), name="residente_exportar"),

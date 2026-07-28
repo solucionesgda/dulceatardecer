@@ -13,18 +13,24 @@
   <aside class="sidebar p-3 p-lg-4">
     <a class="brand-lockup text-decoration-none" href="{% url 'inicio' %}" aria-label="Dulce Atardecer, inicio"><img src="{% static 'img/dulce-atardecer-logo.jpg' %}" alt="Dulce Atardecer"><small>Residencia geriátrica</small></a>
     <nav class="nav flex-column gap-1 mt-4" aria-label="Navegación principal">
-      <a class="nav-link" href="{% url 'inicio' %}"><span>⌂</span> Inicio</a>
-      <a class="nav-link" href="{% url 'residente_list' %}"><span>◌</span> Residentes</a>
-      <a class="nav-link" href="{% url 'personal_list' %}"><span>♧</span> Personal</a>
-      <a class="nav-link" href="{% url 'turnos' %}"><span>◷</span> Turnos</a>
-      <a class="nav-link" href="{% url 'tarea_list' %}"><span>✓</span> Tareas</a>
-      <a class="nav-link" href="{% url 'norma_list' %}"><span>▤</span> Normas y políticas</a>
-      <a class="nav-link" href="{% url 'pago_list' %}"><span>◇</span> Pagos</a>
-      <a class="nav-link" href="{% url 'caja_list' %}"><span>▱</span> Caja</a>
-      <a class="nav-link" href="{% url 'configuracion' %}"><span>⚙</span> Configuración</a>
-      {% if perms.institucional.view_geriatrico %}<a class="nav-link" href="{% url 'geriatrico_list' %}"><span>⌂</span> Geriátricos</a>{% endif %}
-      {% if user.is_staff %}<a class="nav-link" href="{% url 'admin:index' %}"><span>◈</span> Administración</a>{% endif %}
-      {% if user.is_staff %}<a class="nav-link" href="{% url 'tarea_panel' %}"><span>▦</span> Panel de tareas</a>{% endif %}
+      {% if user.perfil_personal and not user.is_staff %}
+        <a class="nav-link" href="{% url 'tarea_list' %}"><span>✓</span> Mis tareas</a>
+        <a class="nav-link" href="{% url 'norma_list' %}"><span>▤</span> Normas y políticas</a>
+        <a class="nav-link" href="{% url 'mi_perfil' %}"><span>◌</span> Mi perfil</a>
+      {% else %}
+        <a class="nav-link" href="{% url 'inicio' %}"><span>⌂</span> Inicio</a>
+        <a class="nav-link" href="{% url 'residente_list' %}"><span>◌</span> Residentes</a>
+        <a class="nav-link" href="{% url 'personal_list' %}"><span>♧</span> Personal</a>
+        <a class="nav-link" href="{% url 'turnos' %}"><span>◷</span> Turnos</a>
+        <a class="nav-link" href="{% url 'tarea_list' %}"><span>✓</span> Tareas</a>
+        <a class="nav-link" href="{% url 'norma_list' %}"><span>▤</span> Normas y políticas</a>
+        <a class="nav-link" href="{% url 'pago_list' %}"><span>◇</span> Pagos</a>
+        <a class="nav-link" href="{% url 'caja_list' %}"><span>▱</span> Caja</a>
+        <a class="nav-link" href="{% url 'configuracion' %}"><span>⚙</span> Configuración</a>
+        {% if perms.institucional.view_geriatrico %}<a class="nav-link" href="{% url 'geriatrico_list' %}"><span>⌂</span> Geriátricos</a>{% endif %}
+        {% if user.is_staff %}<a class="nav-link" href="{% url 'admin:index' %}"><span>◈</span> Administración</a>{% endif %}
+        {% if user.is_staff %}<a class="nav-link" href="{% url 'tarea_panel' %}"><span>▦</span> Panel de tareas</a>{% endif %}
+      {% endif %}
     </nav>
     <div class="sidebar-bottom mt-auto">
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-sidebar w-100">Cerrar sesión</button></form>

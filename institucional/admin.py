@@ -1,8 +1,11 @@
 from django.contrib import admin
+from django.contrib import messages
 from django import forms
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import path, reverse
-from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, HistorialEnvioEmail, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
+from django.utils.html import format_html
+from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
 
 
 @admin.register(Geriatrico)
@@ -140,9 +143,54 @@ class HistorialEnvioEmailAdmin(admin.ModelAdmin):
 
 @admin.register(Personal)
 class PersonalAdmin(admin.ModelAdmin):
-    list_display = ("nombre_completo", "usuario", "cargo", "turno_habitual", "estado")
+    list_display = ("nombre_completo", "usuario", "estado_acceso", "cargo", "turno_habitual", "estado", "acciones_invitacion")
     list_filter = ("cargo", "turno_habitual", "estado")
     search_fields = ("nombre_completo", "dni", "cuil", "usuario__username")
+
+    @admin.display(description="Acceso")
+    def estado_acceso(self, personal):
+        if personal.usuario_id:
+            return "Cuenta activa"
+        try:
+            invitacion = personal.invitacion
+        except InvitacionPersonal.DoesNotExist:
+            return "Sin usuario"
+        return "Invitación pendiente" if invitacion.vigente else "Sin usuario"
+
+    @admin.display(description="Invitación")
+    def acciones_invitacion(self, personal):
+        if personal.usuario_id:
+            return "—"
+        generar = reverse("admin:institucional_personal_generar_invitacion", args=[personal.pk])
+        try:
+            invitacion = personal.invitacion
+        except InvitacionPersonal.DoesNotExist:
+            invitacion = None
+        etiqueta = "Regenerar invitación" if invitacion else "Generar invitación"
+        enlace = format_html('<a class="button" href="{}">{}</a>', generar, etiqueta)
+        if invitacion and invitacion.vigente:
+            activacion = reverse("activar_cuenta", args=[invitacion.token])
+            copiar = format_html(' <button type="button" class="button" onclick="navigator.clipboard.writeText(window.location.origin + \'{}\')">Copiar enlace</button>', activacion)
+            return format_html("{}{}", enlace, copiar)
+        return enlace
+
+    def get_urls(self):
+        urls = super().get_urls()
+        personalizados = [
+            path("<int:personal_id>/generar-invitacion/", self.admin_site.admin_view(self.generar_invitacion), name="institucional_personal_generar_invitacion"),
+        ]
+        return personalizados + urls
+
+    def generar_invitacion(self, request, personal_id):
+        personal = get_object_or_404(Personal, pk=personal_id)
+        if personal.usuario_id:
+            messages.error(request, "La empleada ya tiene una cuenta activa.")
+        else:
+            invitacion, creada = InvitacionPersonal.objects.get_or_create(personal=personal)
+            if not creada:
+                invitacion.regenerar()
+            messages.success(request, "Invitación generada. Copiá el enlace desde la columna Invitación.")
+        return redirect("admin:institucional_personal_changelist")
 
 
 @admin.register(Tarea)

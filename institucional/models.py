@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+import uuid
 
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
@@ -546,3 +547,36 @@ class LecturaNormaPolitica(models.Model):
         constraints = [models.UniqueConstraint(fields=("norma", "personal"), name="lectura_norma_unica_por_personal")]
         verbose_name = "lectura de norma"
         verbose_name_plural = "lecturas de normas"
+
+
+def vencimiento_invitacion():
+    return timezone.now() + timedelta(hours=48)
+
+
+class InvitacionPersonal(models.Model):
+    personal = models.OneToOneField(Personal, on_delete=models.CASCADE, related_name="invitacion")
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    vence_en = models.DateTimeField(default=vencimiento_invitacion)
+    utilizada_en = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = "invitación de personal"
+        verbose_name_plural = "invitaciones de personal"
+
+    @property
+    def vigente(self):
+        return not self.utilizada_en and self.vence_en > timezone.now()
+
+    def clean(self):
+        if self.personal_id and self.personal.usuario_id:
+            raise ValidationError("No se puede invitar a una empleada que ya tiene una cuenta activa.")
+
+    def regenerar(self):
+        self.token = uuid.uuid4()
+        self.vence_en = vencimiento_invitacion()
+        self.utilizada_en = None
+        self.save(update_fields=("token", "vence_en", "utilizada_en"))
+
+    def __str__(self):
+        return f"Invitación de {self.personal}"

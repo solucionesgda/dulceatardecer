@@ -1,4 +1,6 @@
 from django import forms
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
 from datetime import date
 from decimal import Decimal
 
@@ -125,6 +127,28 @@ class EnvioEmailForm(forms.Form):
 
 class CompletarTareaForm(forms.Form):
     observacion = forms.CharField(label="Observación de finalización", required=False, widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Detalle opcional sobre la tarea realizada."}))
+
+
+class ActivarCuentaForm(UserCreationForm):
+    email = forms.EmailField(label="Email")
+
+    class Meta(UserCreationForm.Meta):
+        model = User
+        fields = ("username", "email", "password1", "password2")
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("Ya existe una cuenta con este email.")
+        return email
+
+    def clean_password2(self):
+        password = self.cleaned_data.get("password2")
+        if password != self.cleaned_data.get("password1"):
+            raise forms.ValidationError("Las contraseñas no coinciden.")
+        if password and (len(password) < 8 or not any(char.isalpha() for char in password) or not any(char.isdigit() for char in password)):
+            raise forms.ValidationError("La contraseña debe tener al menos 8 caracteres, letras y números.")
+        return password
 
 
 class ObraSocialForm(forms.ModelForm):
