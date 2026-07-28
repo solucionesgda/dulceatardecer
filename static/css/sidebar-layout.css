@@ -34,3 +34,22 @@
   .sidebar-collapsed .sidebar-toggle { position: static; margin-left: auto; }
   .sidebar-collapsed .brand-lockup img { width: 48px; height: 48px; flex-basis: 48px; }
 }
+
+/* Layout fijo: el contenido siempre ocupa el espacio a la derecha del sidebar. */
+@media (min-width: 768px) {
+  .app-shell { display: block; min-height: 100vh; }
+  .sidebar { position: fixed; top: 0; left: 0; height: 100vh; overflow-y: auto; overflow-x: hidden; z-index: 1041; }
+  .app-main { min-height: 100vh; max-width: none; width: calc(100% - 260px); margin-left: 260px; padding: 2rem 2.5rem; transition: margin-left .25s ease, width .25s ease; }
+  .sidebar-collapsed .app-main { width: calc(100% - 72px); margin-left: 72px; }
+  .nav-label, .brand-copy, .sidebar-submenu .nav-link { white-space: nowrap; }
+  .sidebar-submenu .nav-label { overflow: hidden; text-overflow: ellipsis; }
+}
+
+@media (max-width: 1100px) and (min-width: 768px) {
+  .app-main { width: calc(100% - 72px); margin-left: 72px; padding: 1.5rem; }
+}
+
+@media (max-width: 767px) {
+  .app-main { width: 100%; margin-left: 0; padding: 4.5rem 1rem 1.5rem; }
+  .nav-label, .brand-copy, .sidebar-submenu .nav-link { white-space: nowrap; }
+}
