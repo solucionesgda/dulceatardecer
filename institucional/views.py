@@ -483,6 +483,29 @@ class PersonalListView(LoginRequiredMixin, ListView):
         return qs.filter(estado=estado) if estado else qs
 
 
+class ExportarPersonalView(PersonalListView):
+    def get(self, request, formato):
+        filas = [
+            (
+                persona.nombre_completo,
+                persona.dni,
+                persona.cargo,
+                persona.turno_habitual,
+                persona.telefono,
+                persona.cuil,
+                persona.inicio_contrato,
+                persona.estado,
+                persona.observaciones,
+            )
+            for persona in self.get_queryset()
+        ]
+        columnas = ["Apellido y nombre", "DNI", "Cargo", "Turno habitual", "Teléfono", "CUIL", "Inicio de contrato", "Estado", "Observaciones"]
+        institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        if formato == "excel":
+            return excel_response("personal", columnas, filas)
+        return pdf_response("Reporte de Personal", columnas, filas, institucion, request.user)
+
+
 class PersonalCreateView(LoginRequiredMixin, CreateView):
     model = Personal; form_class = PersonalForm; template_name = "institucional/personal_form.html"; success_url = reverse_lazy("personal_list")
 

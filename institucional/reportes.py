@@ -1,5 +1,6 @@
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 
 from django.http import HttpResponse
 from django.core.mail import EmailMessage, get_connection
@@ -7,7 +8,7 @@ from openpyxl import Workbook
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 def excel_response(titulo, columnas, filas):
@@ -22,7 +23,14 @@ def excel_response(titulo, columnas, filas):
 
 def pdf_response(titulo, columnas, filas, institucion, usuario):
     salida = BytesIO(); documento = SimpleDocTemplate(salida, pagesize=landscape(letter), leftMargin=24, rightMargin=24, topMargin=24)
-    estilos = getSampleStyleSheet(); contenido = [Paragraph(institucion.nombre_institucion, estilos["Title"]), Paragraph(titulo, estilos["Heading2"]), Paragraph(f"Emitido: {datetime.now():%d/%m/%Y %H:%M} - Usuario: {usuario}", estilos["Normal"]), Spacer(1, 12)]
+    estilos = getSampleStyleSheet(); contenido = []
+    try:
+        ruta_logo = institucion.logo.path if institucion.logo else None
+        if ruta_logo and Path(ruta_logo).is_file():
+            contenido.extend([Image(ruta_logo, width=55, height=55), Spacer(1, 6)])
+    except (AttributeError, OSError, ValueError):
+        pass
+    contenido.extend([Paragraph(institucion.nombre_institucion, estilos["Title"]), Paragraph(titulo, estilos["Heading2"]), Paragraph(f"Emitido: {datetime.now():%d/%m/%Y %H:%M} - Usuario: {usuario}", estilos["Normal"]), Spacer(1, 12)])
     tabla = Table([columnas] + [[str(valor or "") for valor in fila] for fila in filas], repeatRows=1)
     tabla.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#243b53")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("GRID", (0,0), (-1,-1), .25, colors.grey), ("FONTSIZE", (0,0), (-1,-1), 7), ("VALIGN", (0,0), (-1,-1), "TOP")]))
     contenido.append(tabla); documento.build(contenido)
