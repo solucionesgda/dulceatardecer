@@ -1,20 +1,25 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AjusteMontoView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TurnosView
+from .views import AjusteMontoView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarResidentesView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TurnosView
 
 urlpatterns = [
     path("login/", auth_views.LoginView.as_view(template_name="registration/login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("", InicioView.as_view(), name="inicio"),
     path("residentes/", ResidenteListView.as_view(), name="residente_list"),
+    path("residentes/exportar/<str:formato>/", ExportarResidentesView.as_view(), name="residente_exportar"),
     path("residentes/<int:pk>/", ResidenteDetailView.as_view(), name="residente_detail"),
     path("pagos/", PagoListView.as_view(), name="pago_list"),
+    path("pagos/exportar/<str:formato>/", ExportarPagosView.as_view(), name="pago_exportar"),
     path("pagos/registrar/", PagoCreateView.as_view(), name="pago_create"),
     path("pagos/generar-cuotas/", GenerarCuotasView.as_view(), name="generar_cuotas"),
     path("pagos/ajustar-montos/", AjusteMontoView.as_view(), name="ajuste_montos"),
     path("pagos/<int:pk>/", PagoDetailView.as_view(), name="pago_detail"),
     path("pagos/<int:pk>/editar/", PagoUpdateView.as_view(), name="pago_update"),
+    path("pagos/<int:pk>/enviar-comprobante/", EnviarComprobanteView.as_view(), name="enviar_comprobante"),
+    path("residentes/<int:pk>/enviar-estado/", EnviarEstadoCuentaView.as_view(), name="enviar_estado_cuenta"),
     path("caja/", CajaListView.as_view(), name="caja_list"),
+    path("caja/exportar/<str:formato>/", ExportarCajaView.as_view(), name="caja_exportar"),
     path("caja/egresos/nuevo/", EgresoCajaCreateView.as_view(), name="egreso_create"),
     path("caja/categorias/", CategoriaCajaListView.as_view(), name="categoria_caja_list"),
     path("caja/cerrar/", CajaCierreView.as_view(), name="caja_cierre"),

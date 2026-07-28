@@ -12,7 +12,8 @@ from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
 from .forms import AjusteMontoForm, CategoriaCajaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente
+from .reportes import enviar_pdf, excel_response, pdf_response
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -107,6 +108,14 @@ class ResidenteListView(LoginRequiredMixin, ListView):
         return context
 
 
+class ExportarResidentesView(ResidenteListView):
+    def get(self, request, formato):
+        filas = [(r.apellido + ", " + r.nombre, r.dni, r.geriatrico.nombre, r.habitacion, r.estado, r.obra_social) for r in self.get_queryset()]
+        columnas = ["Apellido y nombre", "DNI", "Geriátrico", "Habitación", "Estado", "Obra social"]
+        institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        return excel_response("residentes", columnas, filas) if formato == "excel" else pdf_response("Reporte de residentes", columnas, filas, institucion, request.user)
+
+
 class ResidenteDetailView(LoginRequiredMixin, DetailView):
     model = Residente
     template_name = "institucional/residente_detail.html"
@@ -158,6 +167,14 @@ class PagoListView(LoginRequiredMixin, ListView):
             "filtros": self.request.GET,
         })
         return context
+
+
+class ExportarPagosView(PagoListView):
+    def get(self, request, formato):
+        filas = [(p.residente, p.residente.geriatrico.nombre, p.periodo, p.concepto, p.monto, p.total_abonado, p.saldo_pendiente, p.fecha_vencimiento, p.estado) for p in self.get_queryset()]
+        columnas = ["Residente", "Geriátrico", "Período", "Concepto", "Monto", "Abonado", "Saldo", "Vencimiento", "Estado"]
+        institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        return excel_response("pagos", columnas, filas) if formato == "excel" else pdf_response("Reporte de pagos", columnas, filas, institucion, request.user)
 
 
 class PagoCreateView(LoginRequiredMixin, CreateView):
@@ -218,6 +235,31 @@ class PagoDetailView(LoginRequiredMixin, DetailView):
                 messages.success(request, "Abono registrado correctamente.")
                 return redirect("pago_detail", pk=self.object.pk)
         return self.render_to_response(self.get_context_data(abono_form=form))
+
+
+class EnviarComprobanteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        pago = get_object_or_404(Pago.objects.select_related("residente__geriatrico"), pk=pk); destino = pago.residente.email_contacto; institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        try:
+            if not destino: raise ValueError("El residente no tiene email de contacto.")
+            pdf = pdf_response("Comprobante", ["Residente","Período","Concepto","Monto","Abonado","Saldo"], [(pago.residente,pago.periodo,pago.concepto,pago.monto,pago.total_abonado,pago.saldo_pendiente)], institucion, request.user).content
+            enviar_pdf(institucion, destino, "Comprobante de pago", pdf, "comprobante.pdf"); HistorialEnvioEmail.objects.create(usuario=request.user,destinatario=destino,documento="Comprobante",resultado="Enviado"); messages.success(request,"Comprobante enviado.")
+        except Exception as error:
+            HistorialEnvioEmail.objects.create(usuario=request.user,destinatario=destino or "sin-email@example.invalid",documento="Comprobante",resultado="Error",error=str(error)); messages.error(request,f"No se pudo enviar: {error}")
+        return redirect("pago_detail",pk=pk)
+
+
+class EnviarEstadoCuentaView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        residente=get_object_or_404(Residente,pk=pk); institucion,_=ConfiguracionInstitucional.objects.get_or_create(pk=1); destino=residente.email_contacto
+        try:
+            if not destino: raise ValueError("El residente no tiene email de contacto.")
+            filas=[(p.periodo,p.concepto,p.monto,p.total_abonado,p.saldo_pendiente,p.estado) for p in residente.pagos.all()]
+            pdf=pdf_response("Estado de cuenta",["Período","Concepto","Monto","Abonado","Saldo","Estado"],filas,institucion,request.user).content
+            enviar_pdf(institucion,destino,"Estado de cuenta",pdf,"estado_cuenta.pdf"); HistorialEnvioEmail.objects.create(usuario=request.user,destinatario=destino,documento="Estado de cuenta",resultado="Enviado"); messages.success(request,"Estado de cuenta enviado.")
+        except Exception as error:
+            HistorialEnvioEmail.objects.create(usuario=request.user,destinatario=destino or "sin-email@example.invalid",documento="Estado de cuenta",resultado="Error",error=str(error)); messages.error(request,f"No se pudo enviar: {error}")
+        return redirect("residente_detail",pk=pk)
 
 
 class GenerarCuotasView(LoginRequiredMixin, TemplateView):
@@ -342,6 +384,29 @@ class CajaListView(LoginRequiredMixin, ListView):
             item["egresos_pct"] = item["egresos"] / maximo_mensual * 100 if maximo_mensual else 0
         context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos, "resumen_dia": resumen_dia, "ingresos_mes": ingresos_mes, "egresos_mes": egresos_mes, "resultado_mes": ingresos_mes - egresos_mes, "egresos_categoria": categorias, "movimientos_mensuales": meses, "geriatrico_opciones": Geriatrico.objects.all(), "categoria_opciones": CategoriaCaja.objects.filter(activa=True), "medio_pago_opciones": Pago.MedioPago.choices, "filtros": self.request.GET})
         return context
+
+
+class ExportarCajaView(CajaListView):
+    def get(self, request, formato):
+        movimientos = self.get_queryset()
+        filas = [
+            (
+                movimiento.fecha,
+                movimiento.tipo,
+                movimiento.geriatrico.nombre,
+                movimiento.categoria.nombre if movimiento.categoria else "",
+                movimiento.proveedor_beneficiario or str(movimiento.residente or "") or movimiento.descripcion,
+                movimiento.medio_pago,
+                movimiento.usuario,
+                movimiento.importe,
+            )
+            for movimiento in movimientos
+        ]
+        columnas = ["Fecha", "Tipo", "Geriátrico", "Categoría", "Proveedor / detalle", "Medio", "Usuario", "Importe"]
+        institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        if formato == "excel":
+            return excel_response("caja", columnas, filas)
+        return pdf_response("Reporte de caja", columnas, filas, institucion, request.user)
 
 
 class EgresoCajaCreateView(LoginRequiredMixin, CreateView):

@@ -351,6 +351,14 @@ class ConfiguracionInstitucional(models.Model):
     dia_vencimiento_defecto = models.PositiveSmallIntegerField(default=10)
     concepto_cuota_defecto = models.CharField(max_length=150, default="Cuota mensual")
     moneda = models.CharField(max_length=10, default="ARS")
+    smtp_servidor = models.CharField(max_length=150, blank=True)
+    smtp_puerto = models.PositiveIntegerField(default=587)
+    smtp_usuario = models.CharField(max_length=150, blank=True)
+    smtp_contrasena = models.CharField(max_length=255, blank=True)
+    smtp_tls = models.BooleanField(default=True)
+    smtp_ssl = models.BooleanField(default=False)
+    smtp_remitente = models.EmailField(blank=True)
+    smtp_nombre_remitente = models.CharField(max_length=150, blank=True)
     observaciones = models.TextField(blank=True)
     actualizado_en = models.DateTimeField(auto_now=True)
 
@@ -399,6 +407,15 @@ class PorcentajeActualizacion(models.Model):
 
     def __str__(self):
         return f"{self.porcentaje}%"
+
+
+class HistorialEnvioEmail(models.Model):
+    fecha = models.DateTimeField(auto_now_add=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    destinatario = models.EmailField()
+    documento = models.CharField(max_length=100)
+    resultado = models.CharField(max_length=20)
+    error = models.TextField(blank=True)
 
 
 class Personal(models.Model):

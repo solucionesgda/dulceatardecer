@@ -100,7 +100,8 @@ class CategoriaCajaForm(forms.ModelForm):
 class ConfiguracionInstitucionalForm(forms.ModelForm):
     class Meta:
         model = ConfiguracionInstitucional
-        fields = ("nombre_institucion", "direccion", "telefono", "email", "cuit", "logo", "dia_vencimiento_defecto", "concepto_cuota_defecto", "moneda")
+        fields = ("nombre_institucion", "direccion", "telefono", "email", "cuit", "logo", "dia_vencimiento_defecto", "concepto_cuota_defecto", "moneda", "smtp_servidor", "smtp_puerto", "smtp_usuario", "smtp_contrasena", "smtp_tls", "smtp_ssl", "smtp_remitente", "smtp_nombre_remitente")
+        widgets = {"smtp_contrasena": forms.PasswordInput(render_value=True)}
 
 
 class ObraSocialForm(forms.ModelForm):

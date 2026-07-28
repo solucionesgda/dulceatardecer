@@ -154,6 +154,16 @@ class AccesoTest(TestCase):
         cierre = CajaCierre.objects.get(fecha=date.today())
         self.assertEqual(cierre.saldo_final, Decimal("80.00"))
 
+    def test_exportaciones_caja_respetan_filtro_de_proveedor(self):
+        residente = self.crear_residente_con_monto("12341234", "1000.00")
+        categoria, _ = CategoriaCaja.objects.get_or_create(nombre="Servicios")
+        CajaMovimiento.objects.create(tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=residente.geriatrico, categoria=categoria, proveedor_beneficiario="EPE", importe=Decimal("10.00"))
+        self.client.login(username="consulta", password="clave-segura")
+        for formato, contenido in (("excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), ("pdf", "application/pdf")):
+            response = self.client.get(reverse("caja_exportar", args=[formato]), {"proveedor": "EPE"})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], contenido)
+
 
 class GeriatricoTest(TestCase):
     def test_codigo_es_unico(self):
