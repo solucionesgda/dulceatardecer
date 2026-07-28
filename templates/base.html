@@ -11,7 +11,7 @@
 {% if user.is_authenticated %}
 <div class="app-shell d-lg-flex">
   <aside class="sidebar p-3 p-lg-4">
-    <a class="brand-lockup text-decoration-none" href="{% url 'inicio' %}" aria-label="Dulce Atardecer, inicio"><img src="{% static 'img/dulce-atardecer-logo.jpg' %}" alt="Dulce Atardecer"><small>Residencia geriátrica</small></a>
+    <a class="brand-lockup text-decoration-none" href="{% url 'inicio' %}" aria-label="Dulce Atardecer, inicio"><img src="{% static 'img/dulce-atardecer-logo.jpg' %}" alt="Dulce Atardecer"><small>Dulce Atardecer</small></a>
     <nav class="nav flex-column gap-1 mt-4" aria-label="Navegación principal">
       {% if user.perfil_personal and not user.is_staff %}
         <a class="nav-link" href="{% url 'tarea_list' %}"><span>✓</span> Mis tareas</a>

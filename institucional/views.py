@@ -808,7 +808,7 @@ class PersonalListView(LoginRequiredMixin, ListView):
     model = Personal
     template_name = "institucional/personal_list.html"
     def get_queryset(self):
-        qs = Personal.objects.all(); estado = self.request.GET.get("estado", "")
+        qs = Personal.objects.select_related("usuario", "invitacion"); estado = self.request.GET.get("estado", "")
         return qs.filter(estado=estado) if estado else qs
 
 

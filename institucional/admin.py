@@ -5,6 +5,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import path, reverse
 from django.utils.html import format_html
+from django.utils.http import url_has_allowed_host_and_scheme
 from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
 
 
@@ -190,6 +191,9 @@ class PersonalAdmin(admin.ModelAdmin):
             if not creada:
                 invitacion.regenerar()
             messages.success(request, "Invitación generada. Copiá el enlace desde la columna Invitación.")
+        siguiente = request.GET.get("next", "")
+        if siguiente and url_has_allowed_host_and_scheme(siguiente, {request.get_host()}):
+            return redirect(siguiente)
         return redirect("admin:institucional_personal_changelist")
 
 
