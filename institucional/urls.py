@@ -1,8 +1,9 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
+from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
+    path("service-worker.js", ServiceWorkerView.as_view(), name="service_worker"),
     path("login/", auth_views.LoginView.as_view(template_name="registration/login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("activar-cuenta/<uuid:token>/", ActivarCuentaView.as_view(), name="activar_cuenta"),

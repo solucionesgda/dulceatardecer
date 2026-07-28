@@ -444,3 +444,18 @@ class CierreVersionUnoTest(TestCase):
         self.assertRedirects(self.client.get(reverse("acerca_sistema")), f"{reverse('login')}?next={reverse('acerca_sistema')}")
         self.client.login(username="admin-v1", password="ClaveSegura1")
         self.assertContains(self.client.get(reverse("acerca_sistema")), "Sistema de Gestión Integral")
+
+
+class PwaTest(TestCase):
+    def test_service_worker_es_publico_y_tiene_alcance_raiz(self):
+        respuesta = self.client.get(reverse("service_worker"))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta["Service-Worker-Allowed"], "/")
+        self.assertIn("/static/offline.html", respuesta.content.decode())
+        self.assertNotIn("/pagos/", respuesta.content.decode())
+
+    def test_login_incluye_manifest_y_metadatos_ios(self):
+        respuesta = self.client.get(reverse("login"))
+        self.assertContains(respuesta, "manifest.webmanifest")
+        self.assertContains(respuesta, "apple-mobile-web-app-capable")
+        self.assertContains(respuesta, "Añadir a pantalla de inicio")

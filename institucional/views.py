@@ -240,6 +240,17 @@ class NotificacionesView(LoginRequiredMixin, TemplateView):
     template_name = "institucional/notificaciones.html"
 
 
+class ServiceWorkerView(View):
+    """Expone el worker desde la raíz, requisito para controlar toda la app."""
+
+    def get(self, request):
+        contenido = (Path(settings.BASE_DIR) / "static" / "js" / "service-worker.js").read_text(encoding="utf-8")
+        response = HttpResponse(contenido, content_type="application/javascript")
+        response["Service-Worker-Allowed"] = "/"
+        response["Cache-Control"] = "no-cache"
+        return response
+
+
 class BackupView(LoginRequiredMixin, UserPassesTestMixin, View):
     def test_func(self):
         return self.request.user.is_staff
