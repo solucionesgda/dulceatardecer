@@ -14,22 +14,16 @@
     <a class="brand-lockup text-decoration-none" href="{% url 'inicio' %}" aria-label="Dulce Atardecer, inicio"><img src="{% static 'img/dulce-atardecer-logo.jpg' %}" alt="Dulce Atardecer"><small>Dulce Atardecer</small></a>
     <nav class="nav flex-column gap-1 mt-4" aria-label="Navegación principal">
       {% if user.perfil_personal and not user.is_staff %}
-        <a class="nav-link" href="{% url 'tarea_list' %}"><span>✓</span> Mis tareas</a>
-        <a class="nav-link" href="{% url 'norma_list' %}"><span>▤</span> Normas y políticas</a>
-        <a class="nav-link" href="{% url 'mi_perfil' %}"><span>◌</span> Mi perfil</a>
+        <details class="sidebar-group" open><summary><span>♧</span> Personal</summary><div class="sidebar-submenu"><a class="nav-link {% if request.resolver_match.url_name == 'mi_perfil' %}active{% endif %}" href="{% url 'mi_perfil' %}">Empleadas</a><a class="nav-link {% if request.resolver_match.url_name == 'tarea_list' or request.resolver_match.url_name == 'tarea_completar' %}active{% endif %}" href="{% url 'tarea_list' %}">Tareas</a><a class="nav-link {% if request.resolver_match.url_name == 'norma_list' %}active{% endif %}" href="{% url 'norma_list' %}">Normas y políticas</a></div></details>
       {% else %}
-        <a class="nav-link" href="{% url 'inicio' %}"><span>⌂</span> Inicio</a>
-        <a class="nav-link" href="{% url 'residente_list' %}"><span>◌</span> Residentes</a>
-        <a class="nav-link" href="{% url 'personal_list' %}"><span>♧</span> Personal</a>
-        <a class="nav-link" href="{% url 'turnos' %}"><span>◷</span> Turnos</a>
-        <a class="nav-link" href="{% url 'tarea_list' %}"><span>✓</span> Tareas</a>
-        <a class="nav-link" href="{% url 'norma_list' %}"><span>▤</span> Normas y políticas</a>
-        <a class="nav-link" href="{% url 'pago_list' %}"><span>◇</span> Pagos</a>
-        <a class="nav-link" href="{% url 'caja_list' %}"><span>▱</span> Caja</a>
-        <a class="nav-link" href="{% url 'configuracion' %}"><span>⚙</span> Configuración</a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inicio' %}active{% endif %}" href="{% url 'inicio' %}"><span>⌂</span> Inicio</a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'residente_list' or request.resolver_match.url_name == 'residente_detail' %}active{% endif %}" href="{% url 'residente_list' %}"><span>◌</span> Residentes</a>
+        <details class="sidebar-group" open><summary><span>♧</span> Personal</summary><div class="sidebar-submenu"><a class="nav-link {% if request.resolver_match.url_name == 'personal_list' or request.resolver_match.url_name == 'personal_create' %}active{% endif %}" href="{% url 'personal_list' %}">Empleadas</a><a class="nav-link {% if request.resolver_match.url_name == 'turnos' %}active{% endif %}" href="{% url 'turnos' %}">Turnos</a><a class="nav-link {% if request.resolver_match.url_name == 'tarea_list' or request.resolver_match.url_name == 'tarea_completar' %}active{% endif %}" href="{% url 'tarea_list' %}">Tareas</a><a class="nav-link {% if request.resolver_match.url_name == 'norma_list' %}active{% endif %}" href="{% url 'norma_list' %}">Normas y políticas</a>{% if user.is_staff %}<a class="nav-link {% if request.resolver_match.url_name == 'tarea_panel' %}active{% endif %}" href="{% url 'tarea_panel' %}">Panel de tareas</a>{% endif %}</div></details>
+        <a class="nav-link {% if request.resolver_match.url_name == 'pago_list' or request.resolver_match.url_name == 'pago_detail' %}active{% endif %}" href="{% url 'pago_list' %}"><span>◇</span> Pagos</a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'caja_list' %}active{% endif %}" href="{% url 'caja_list' %}"><span>▱</span> Caja</a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'configuracion' %}active{% endif %}" href="{% url 'configuracion' %}"><span>⚙</span> Configuración</a>
         {% if perms.institucional.view_geriatrico %}<a class="nav-link" href="{% url 'geriatrico_list' %}"><span>⌂</span> Geriátricos</a>{% endif %}
         {% if user.is_staff %}<a class="nav-link" href="{% url 'admin:index' %}"><span>◈</span> Administración</a>{% endif %}
-        {% if user.is_staff %}<a class="nav-link" href="{% url 'tarea_panel' %}"><span>▦</span> Panel de tareas</a>{% endif %}
       {% endif %}
     </nav>
     <div class="sidebar-bottom mt-auto">
