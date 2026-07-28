@@ -36,6 +36,18 @@ class AccesoTest(TestCase):
         self.assertEqual(response.context["residentes_activos"], 1)
         self.assertEqual(response.context["camas_disponibles"], 2)
 
+    def test_panel_filtra_por_geriatrico_y_periodo(self):
+        uno = Geriatrico.objects.create(nombre="Geri 1", codigo="GD1", direccion="Calle 1", capacidad_total=3)
+        dos = Geriatrico.objects.create(nombre="Geri 2", codigo="GD2", direccion="Calle 2", capacidad_total=4)
+        Residente.objects.create(geriatrico=uno, nombre="Ana", apellido="Pérez", dni="11112222", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")
+        Residente.objects.create(geriatrico=dos, nombre="Luis", apellido="Gómez", dni="22223333", fecha_ingreso="2026-01-01", contacto_familiar="3411234568")
+        self.client.login(username="consulta", password="clave-segura")
+        response = self.client.get(reverse("inicio"), {"geriatrico": uno.pk, "mes": 7, "anio": 2026})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["residentes_activos"], 1)
+        self.assertEqual(response.context["capacidad_total"], 3)
+        self.assertEqual(len(response.context["geriatrico_estadisticas"]), 1)
+
     def test_listado_residentes_permite_busqueda_y_filtros(self):
         geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=3)
         Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")

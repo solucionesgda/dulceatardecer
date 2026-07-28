@@ -1,6 +1,7 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from datetime import date, timedelta
 import calendar
+import json
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
@@ -19,9 +20,40 @@ from .reportes import enviar_pdf, excel_response, pdf_response
 class InicioView(LoginRequiredMixin, TemplateView):
     template_name = "institucional/inicio.html"
 
+    nombres_meses = ("", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
+
+    def filtro_fecha(self):
+        hoy = date.today()
+        try:
+            mes = int(self.request.GET.get("mes", hoy.month))
+            anio = int(self.request.GET.get("anio", hoy.year))
+            if mes not in range(1, 13):
+                raise ValueError
+        except (TypeError, ValueError):
+            mes, anio = hoy.month, hoy.year
+        return mes, anio
+
+    def rango_mes(self, mes, anio):
+        return date(anio, mes, 1), date(anio, mes, calendar.monthrange(anio, mes)[1])
+
+    def meses_recientes(self, mes, anio):
+        resultado = []
+        for desplazamiento in range(5, -1, -1):
+            indice = anio * 12 + mes - 1 - desplazamiento
+            anio_mes, mes_mes = divmod(indice, 12)
+            resultado.append((mes_mes + 1, anio_mes))
+        return resultado
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        geriatrico_qs = Geriatrico.objects.annotate(
+        Pago.actualizar_vencidos()
+        mes, anio = self.filtro_fecha()
+        inicio_mes, fin_mes = self.rango_mes(mes, anio)
+        geriatrico_id = self.request.GET.get("geriatrico", "")
+        geriatrico_qs = Geriatrico.objects.all()
+        if geriatrico_id:
+            geriatrico_qs = geriatrico_qs.filter(pk=geriatrico_id)
+        geriatrico_qs = geriatrico_qs.annotate(
             residentes_activos=Count(
                 "residentes",
                 filter=Q(residentes__estado=Residente.Estado.ACTIVO),
@@ -37,13 +69,78 @@ class InicioView(LoginRequiredMixin, TemplateView):
                 "ocupacion": (geriatrico.residentes_activos / geriatrico.capacidad_total * 100),
             })
         capacidad_total = geriatrico_qs.aggregate(total=Sum("capacidad_total"))["total"] or 0
-        residentes_activos = Residente.objects.filter(estado=Residente.Estado.ACTIVO).count()
+        residentes_activos = sum(item["ocupadas"] for item in geriatrico_estadisticas)
+        pagos = Pago.objects.select_related("residente__geriatrico").all()
+        movimientos = CajaMovimiento.objects.select_related("geriatrico", "categoria", "residente").all()
+        if geriatrico_id:
+            pagos = pagos.filter(residente__geriatrico_id=geriatrico_id)
+            movimientos = movimientos.filter(geriatrico_id=geriatrico_id)
+        pagos_pendientes = pagos.exclude(estado=Pago.Estado.PAGADO)
+        pagos_mes = pagos.filter(periodo=f"{anio}-{mes:02d}")
+        abonos_mes = PagoParcial.objects.filter(fecha_pago__range=(inicio_mes, fin_mes))
+        if geriatrico_id:
+            abonos_mes = abonos_mes.filter(pago__residente__geriatrico_id=geriatrico_id)
+        movimientos_mes = movimientos.filter(fecha__range=(inicio_mes, fin_mes))
+        ingresos_mes = movimientos_mes.filter(tipo=CajaMovimiento.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        egresos_mes = movimientos_mes.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        ingresos_total = movimientos.filter(tipo=CajaMovimiento.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        egresos_total = movimientos.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        pagos_deuda = list(pagos_pendientes.prefetch_related("abonos").order_by("fecha_vencimiento"))
+        deuda_por_residente = {}
+        for pago in pagos_deuda:
+            item = deuda_por_residente.setdefault(pago.residente_id, {"residente": pago.residente, "deuda": Decimal("0.00")})
+            item["deuda"] += pago.saldo_pendiente
+        meses = self.meses_recientes(mes, anio)
+        etiquetas_meses = [f"{self.nombres_meses[m][:3]} {a}" for m, a in meses]
+        ingresos_serie, egresos_serie, facturado_serie, cobrado_serie = [], [], [], []
+        for mes_serie, anio_serie in meses:
+            desde, hasta = self.rango_mes(mes_serie, anio_serie)
+            movimientos_serie = movimientos.filter(fecha__range=(desde, hasta))
+            ingresos_serie.append(float(movimientos_serie.filter(tipo=CajaMovimiento.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or 0))
+            egresos_serie.append(float(movimientos_serie.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or 0))
+            pagos_serie = pagos.filter(periodo=f"{anio_serie}-{mes_serie:02d}")
+            facturado_serie.append(float(pagos_serie.aggregate(total=Sum("monto"))["total"] or 0))
+            abonos_serie = PagoParcial.objects.filter(fecha_pago__range=(desde, hasta))
+            if geriatrico_id:
+                abonos_serie = abonos_serie.filter(pago__residente__geriatrico_id=geriatrico_id)
+            cobrado_serie.append(float(abonos_serie.aggregate(total=Sum("monto"))["total"] or 0))
+        estados_pago = [(estado, pagos.filter(estado=estado).count()) for estado, _ in Pago.Estado.choices]
+        egresos_categoria = movimientos_mes.filter(tipo=CajaMovimiento.Tipo.EGRESO, categoria__isnull=False).values("categoria__nombre").annotate(total=Sum("importe")).order_by("categoria__nombre")
+        obras_sociales = Residente.objects.filter(estado=Residente.Estado.ACTIVO)
+        if geriatrico_id:
+            obras_sociales = obras_sociales.filter(geriatrico_id=geriatrico_id)
+        obras_sociales = obras_sociales.values("obra_social").annotate(total=Count("id")).order_by("obra_social")
         context.update({
             "residentes_activos": residentes_activos,
             "camas_ocupadas": residentes_activos,
             "camas_disponibles": capacidad_total - residentes_activos,
             "capacidad_total": capacidad_total,
+            "porcentaje_ocupacion": (residentes_activos / capacidad_total * 100) if capacidad_total else 0,
+            "pagos_pendientes": pagos.filter(estado__in=(Pago.Estado.PENDIENTE, Pago.Estado.PARCIAL)).count(),
+            "pagos_vencidos": pagos.filter(estado=Pago.Estado.VENCIDO).count(),
+            "total_facturado_mes": pagos_mes.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"),
+            "total_cobrado_mes": abonos_mes.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"),
+            "deuda_pendiente": sum((item["deuda"] for item in deuda_por_residente.values()), Decimal("0.00")),
+            "ingresos_mes": ingresos_mes,
+            "egresos_mes": egresos_mes,
+            "resultado_mes": ingresos_mes - egresos_mes,
+            "saldo_actual_caja": ingresos_total - egresos_total,
+            "personal_activo": Personal.objects.filter(estado=Personal.Estado.ACTIVO).count(),
             "geriatrico_estadisticas": geriatrico_estadisticas,
+            "ultimos_pagos": pagos.order_by("-periodo", "-pk")[:5],
+            "ultimos_egresos": movimientos.filter(tipo=CajaMovimiento.Tipo.EGRESO).order_by("-fecha", "-pk")[:5],
+            "residentes_con_deuda": sorted(deuda_por_residente.values(), key=lambda item: item["deuda"], reverse=True)[:5],
+            "lista_pagos_vencidos": pagos.filter(estado=Pago.Estado.VENCIDO).order_by("fecha_vencimiento")[:5],
+            "geriatrico_opciones": Geriatrico.objects.all(),
+            "filtros": {"geriatrico": geriatrico_id, "mes": mes, "anio": anio},
+            "meses_opciones": list(enumerate(self.nombres_meses))[1:],
+            "anios_opciones": range(anio - 2, anio + 3),
+            "grafico_ocupacion": json.dumps({"labels": [item["geriatrico"].nombre for item in geriatrico_estadisticas], "data": [item["ocupacion"] for item in geriatrico_estadisticas]}),
+            "grafico_caja": json.dumps({"labels": etiquetas_meses, "ingresos": ingresos_serie, "egresos": egresos_serie}),
+            "grafico_pagos": json.dumps({"labels": [estado for estado, total in estados_pago if total], "data": [total for estado, total in estados_pago if total]}),
+            "grafico_egresos": json.dumps({"labels": [item["categoria__nombre"] for item in egresos_categoria], "data": [float(item["total"]) for item in egresos_categoria]}),
+            "grafico_facturacion": json.dumps({"labels": etiquetas_meses, "facturado": facturado_serie, "cobrado": cobrado_serie}),
+            "grafico_obras": json.dumps({"labels": [item["obra_social"] or "Sin cobertura" for item in obras_sociales], "data": [item["total"] for item in obras_sociales]}),
         })
         return context
 
