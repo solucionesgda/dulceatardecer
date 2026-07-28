@@ -1,0 +1,36 @@
+/* Ajustes de distribución del menú lateral. */
+:root { --sidebar-item-height: 44px; }
+.sidebar { padding: 12px; }
+.sidebar-header { position: relative; display: flex; align-items: center; min-height: 62px; padding: 0 2px 10px; margin: 0; }
+.brand-lockup { flex: 1; min-width: 0; gap: 12px; }
+.brand-lockup img { width: 48px; height: 48px; flex-basis: 48px; }
+.sidebar-toggle { position: static; flex: 0 0 30px; width: 30px; height: 30px; margin-left: auto; }
+.sidebar-nav { gap: 5px; margin-top: 0; }
+.nav-link, .sidebar-group summary, .logout-link { height: var(--sidebar-item-height); min-height: var(--sidebar-item-height); gap: 12px; padding: 0 12px; line-height: 1; align-items: center; }
+.nav-icon { width: 20px; min-width: 20px; line-height: 1; text-align: center; }
+.sidebar-group summary { padding-right: 10px; }
+.group-chevron { display: grid; place-items: center; width: 20px; min-width: 20px; margin-left: auto; }
+.sidebar-submenu { margin: 4px 0 6px 18px; padding-left: 9px; }
+.sidebar-submenu .nav-link { height: 38px; min-height: 38px; padding: 0 10px; gap: 12px; }
+.sidebar-bottom { padding-top: 12px; }
+.sidebar-collapsed .sidebar-header { display: flex; justify-content: center; min-height: 58px; padding-bottom: 10px; }
+.sidebar-collapsed .brand-lockup { position: absolute; left: 50%; transform: translateX(-50%); justify-content: center; }
+.sidebar-collapsed .brand-lockup img { width: 36px; height: 36px; flex-basis: 36px; }
+.sidebar-collapsed .sidebar-toggle { position: absolute; right: 0; margin: 0; }
+.sidebar-collapsed .nav-link, .sidebar-collapsed .sidebar-group summary, .sidebar-collapsed .logout-link { height: 44px; min-height: 44px; padding: 0; gap: 0; }
+.sidebar-collapsed .nav-icon { width: 20px; min-width: 20px; }
+.sidebar-collapsed [data-tooltip]:hover:after { left: 62px; top: 50%; transform: translateY(-50%); }
+@media (max-width: 1100px) and (min-width: 768px) {
+  .sidebar-header { min-height: 58px; padding-bottom: 10px; }
+  .sidebar .nav-link, .sidebar .sidebar-group summary, .sidebar .logout-link { height: 44px; min-height: 44px; padding: 0; gap: 0; }
+  .sidebar .nav-icon { width: 20px; min-width: 20px; }
+}
+@media (max-width: 767px) {
+  .sidebar-header { min-height: 62px; }
+  .sidebar .nav-link, .sidebar .sidebar-group summary, .sidebar .logout-link { height: 44px; min-height: 44px; padding: 0 12px; gap: 12px; }
+  .sidebar .sidebar-submenu .nav-link { height: 38px; min-height: 38px; padding: 0 10px; }
+  .sidebar-collapsed .sidebar-header { justify-content: flex-start; }
+  .sidebar-collapsed .brand-lockup { position: static; transform: none; }
+  .sidebar-collapsed .sidebar-toggle { position: static; margin-left: auto; }
+  .sidebar-collapsed .brand-lockup img { width: 48px; height: 48px; flex-basis: 48px; }
+}
