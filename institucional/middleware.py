@@ -5,7 +5,7 @@ from django.shortcuts import redirect
 class AccesoEmpleadaMiddleware:
     """Limita las cuentas de Personal a su espacio operativo."""
 
-    prefijos_permitidos = ("/tareas/", "/normas/", "/mi-perfil/", "/notificaciones/", "/logout/", "/static/", "/media/")
+    prefijos_permitidos = ("/tareas/", "/normas/", "/mi-perfil/", "/mis-turnos/", "/notificaciones/", "/logout/", "/static/", "/media/")
 
     def __init__(self, get_response):
         self.get_response = get_response

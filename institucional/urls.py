@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
+from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
     path("service-worker.js", ServiceWorkerView.as_view(), name="service_worker"),
@@ -8,6 +8,7 @@ urlpatterns = [
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("activar-cuenta/<uuid:token>/", ActivarCuentaView.as_view(), name="activar_cuenta"),
     path("mi-perfil/", MiPerfilView.as_view(), name="mi_perfil"),
+    path("mis-turnos/", MisTurnosView.as_view(), name="mis_turnos"),
     path("notificaciones/", NotificacionesView.as_view(), name="notificaciones"),
     path("acerca-del-sistema/", AcercaSistemaView.as_view(), name="acerca_sistema"),
     path("", InicioView.as_view(), name="inicio"),

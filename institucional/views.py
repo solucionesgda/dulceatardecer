@@ -168,6 +168,36 @@ class PersonalActualMixin:
             return None
 
 
+HORARIOS_TURNO = {
+    AsignacionTurno.Codigo.M: "07:00 a 15:00",
+    AsignacionTurno.Codigo.T: "15:00 a 23:00",
+    AsignacionTurno.Codigo.N: "23:00 a 07:00",
+}
+
+
+def asignacion_de_personal(personal, fecha):
+    """Consulta la grilla existente; no crea ni modifica asignaciones."""
+    return AsignacionTurno.objects.filter(
+        personal=personal,
+        grilla__mes=fecha.month,
+        grilla__anio=fecha.year,
+        dia=fecha.day,
+    ).select_related("grilla").first()
+
+
+def datos_turno(asignacion):
+    if not asignacion or not asignacion.codigo:
+        return {"codigo": "", "tipo": "Sin turno asignado", "horario": "—", "franco": False, "geriatrico": "Sin asignación en la grilla actual"}
+    codigo = asignacion.codigo
+    return {
+        "codigo": codigo,
+        "tipo": asignacion.get_codigo_display(),
+        "horario": HORARIOS_TURNO.get(codigo, "No corresponde"),
+        "franco": codigo == AsignacionTurno.Codigo.F,
+        "geriatrico": "Sin asignación en la grilla actual",
+    }
+
+
 class ActivarCuentaView(View):
     template_name = "institucional/activar_cuenta.html"
 
@@ -234,6 +264,42 @@ class MiPerfilView(LoginRequiredMixin, PersonalActualMixin, TemplateView):
             messages.success(request, "Tu contraseña fue actualizada.")
             return redirect("mi_perfil")
         return self.render_to_response(self.get_context_data(password_form=password_form))
+
+
+class MisTurnosView(LoginRequiredMixin, PersonalActualMixin, TemplateView):
+    template_name = "institucional/mis_turnos.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        personal = self.personal_actual()
+        hoy = date.today()
+        inicio_semana = hoy - timedelta(days=hoy.weekday())
+        dias = []
+        if personal:
+            for desplazamiento in range(7):
+                fecha = inicio_semana + timedelta(days=desplazamiento)
+                datos = datos_turno(asignacion_de_personal(personal, fecha))
+                dias.append({"fecha": fecha, **datos})
+            proximo = None
+            for desplazamiento in range(1, 93):
+                fecha = hoy + timedelta(days=desplazamiento)
+                datos = datos_turno(asignacion_de_personal(personal, fecha))
+                if datos["codigo"] in HORARIOS_TURNO:
+                    proximo = {"fecha": fecha, **datos}
+                    break
+            hoy_datos = datos_turno(asignacion_de_personal(personal, hoy))
+        else:
+            hoy_datos, proximo = datos_turno(None), None
+        context.update({
+            "personal_actual": personal,
+            "turno_hoy": hoy_datos,
+            "proximo_turno": proximo,
+            "dias_semana": dias,
+            "hoy": hoy,
+            "turnos_semana": sum(1 for item in dias if item["codigo"] in HORARIOS_TURNO),
+            "francos_semana": sum(1 for item in dias if item["franco"]),
+        })
+        return context
 
 
 class NotificacionesView(LoginRequiredMixin, TemplateView):
@@ -312,6 +378,8 @@ class TareasListView(LoginRequiredMixin, PersonalActualMixin, ListView):
             "personal_actual": personal,
             "tareas_pendientes": self.get_queryset().exclude(estado=Tarea.Estado.COMPLETADA).count(),
             "tareas_vencidas": self.get_queryset().exclude(estado=Tarea.Estado.COMPLETADA, fecha__gte=date.today()).count(),
+            "turno_hoy": datos_turno(asignacion_de_personal(personal, date.today())) if personal else datos_turno(None),
+            "hoy": date.today(),
         })
         return context
 

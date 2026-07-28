@@ -459,3 +459,28 @@ class PwaTest(TestCase):
         self.assertContains(respuesta, "manifest.webmanifest")
         self.assertContains(respuesta, "apple-mobile-web-app-capable")
         self.assertContains(respuesta, "Añadir a pantalla de inicio")
+
+
+class MisTurnosTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("turnos-propios", password="ClaveSegura1")
+        self.personal = Personal.objects.create(nombre_completo="Ana Turnos", usuario=self.usuario, dni="77888999", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Mañana", inicio_contrato=date.today())
+        self.otro = Personal.objects.create(nombre_completo="Otra Empleada", dni="66777888", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Tarde", inicio_contrato=date.today())
+        hoy = date.today()
+        grilla = GrillaTurnos.objects.create(mes=hoy.month, anio=hoy.year)
+        AsignacionTurno.objects.create(grilla=grilla, personal=self.personal, dia=hoy.day, codigo=AsignacionTurno.Codigo.M)
+        AsignacionTurno.objects.create(grilla=grilla, personal=self.otro, dia=hoy.day, codigo=AsignacionTurno.Codigo.N)
+
+    def test_empleada_ve_solo_sus_turnos_y_no_edita_grilla(self):
+        self.client.login(username="turnos-propios", password="ClaveSegura1")
+        respuesta = self.client.get(reverse("mis_turnos"))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Mañana (7-15h)")
+        self.assertNotContains(respuesta, "Otra Empleada")
+        self.assertEqual(self.client.get(reverse("turnos")).status_code, 403)
+
+    def test_panel_de_tareas_muestra_turno_de_hoy(self):
+        self.client.login(username="turnos-propios", password="ClaveSegura1")
+        respuesta = self.client.get(reverse("tarea_list"))
+        self.assertContains(respuesta, "Hoy trabajás")
+        self.assertContains(respuesta, "07:00 a 15:00")
