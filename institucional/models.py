@@ -454,6 +454,20 @@ class Personal(models.Model):
     def __str__(self): return self.nombre_completo
 
 
+class PerfilUsuario(models.Model):
+    """Datos de presentación opcionales, independientes de la ficha laboral."""
+
+    usuario = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="perfil")
+    foto = models.ImageField(upload_to="perfiles/", blank=True, null=True)
+
+    class Meta:
+        verbose_name = "perfil de usuario"
+        verbose_name_plural = "perfiles de usuario"
+
+    def __str__(self):
+        return f"Perfil de {self.usuario}"
+
+
 class GrillaTurnos(models.Model):
     mes = models.PositiveSmallIntegerField()
     anio = models.PositiveSmallIntegerField()

@@ -1,12 +1,14 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import ActivarCuentaView, AjusteMontoView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, NormaMarcarLeidaView, NormasListView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
+from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
     path("login/", auth_views.LoginView.as_view(template_name="registration/login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("activar-cuenta/<uuid:token>/", ActivarCuentaView.as_view(), name="activar_cuenta"),
     path("mi-perfil/", MiPerfilView.as_view(), name="mi_perfil"),
+    path("notificaciones/", NotificacionesView.as_view(), name="notificaciones"),
+    path("acerca-del-sistema/", AcercaSistemaView.as_view(), name="acerca_sistema"),
     path("", InicioView.as_view(), name="inicio"),
     path("residentes/", ResidenteListView.as_view(), name="residente_list"),
     path("residentes/exportar/<str:formato>/", ExportarResidentesView.as_view(), name="residente_exportar"),
@@ -26,6 +28,7 @@ urlpatterns = [
     path("caja/categorias/", CategoriaCajaListView.as_view(), name="categoria_caja_list"),
     path("caja/cerrar/", CajaCierreView.as_view(), name="caja_cierre"),
     path("configuracion/", ConfiguracionView.as_view(), name="configuracion"),
+    path("configuracion/backup/", BackupView.as_view(), name="backup_generar"),
     path("tareas/", TareasListView.as_view(), name="tarea_list"),
     path("tareas/panel/", PanelTareasAdminView.as_view(), name="tarea_panel"),
     path("tareas/<int:pk>/iniciar/", TareaEnProcesoView.as_view(), name="tarea_iniciar"),

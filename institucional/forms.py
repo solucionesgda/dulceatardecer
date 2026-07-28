@@ -1,10 +1,10 @@
 from django import forms
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import PasswordChangeForm, UserChangeForm, UserCreationForm
 from django.contrib.auth.models import User
 from datetime import date
 from decimal import Decimal
 
-from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente, Tarea
+from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 
 
 class GeriatricoForm(forms.ModelForm):
@@ -174,3 +174,22 @@ class PersonalForm(forms.ModelForm):
         model = Personal
         fields = ("nombre_completo", "dni", "cargo", "turno_habitual", "telefono", "cuil", "inicio_contrato", "estado", "observaciones")
         widgets = {"inicio_contrato": forms.DateInput(attrs={"type": "date"}), "observaciones": forms.Textarea(attrs={"rows": 3})}
+
+
+class PerfilUsuarioForm(UserChangeForm):
+    password = None
+
+    class Meta:
+        model = User
+        fields = ("first_name", "last_name", "email")
+        labels = {"first_name": "Nombre", "last_name": "Apellido", "email": "Email"}
+
+
+class FotoPerfilForm(forms.ModelForm):
+    class Meta:
+        model = PerfilUsuario
+        fields = ("foto",)
+
+
+class CambioContrasenaForm(PasswordChangeForm):
+    pass

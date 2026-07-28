@@ -1,0 +1,3 @@
+{% extends 'base.html' %}
+{% block title %}Notificaciones{% endblock %}
+{% block content %}<div class="mb-4"><h1 class="h3 mb-1">Centro de notificaciones</h1><p class="text-muted mb-0">Avisos relevantes para tu cuenta.</p></div><div class="card"><div class="list-group list-group-flush">{% for aviso in notificaciones %}<a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" href="{{ aviso.url }}"><span>{{ aviso.texto }}</span><span class="badge text-bg-{{ aviso.tipo }}">Ver</span></a>{% empty %}<div class="list-group-item text-muted py-4">No tenés notificaciones pendientes.</div>{% endfor %}</div></div>{% endblock %}

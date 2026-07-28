@@ -7,7 +7,9 @@ from django.urls import reverse
 from django.utils import timezone
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
+from io import BytesIO
+import zipfile
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
 
 
 class AccesoTest(TestCase):
@@ -400,3 +402,45 @@ class GeriatricoTest(TestCase):
         residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567", obra_social=Residente.ObraSocial.PAMI, obra_social_otra="Cobertura anterior")
         residente.full_clean()
         self.assertEqual(residente.obra_social_otra, "")
+
+
+class CierreVersionUnoTest(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("admin-v1", password="ClaveSegura1", is_staff=True)
+        self.empleada = User.objects.create_user("empleada-v1", password="ClaveSegura1")
+        self.personal = Personal.objects.create(nombre_completo="Empleada V1", usuario=self.empleada, dni="33444555", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Mañana", inicio_contrato=date.today())
+
+    def test_edicion_de_perfil_y_foto_opcional(self):
+        self.client.login(username="empleada-v1", password="ClaveSegura1")
+        respuesta = self.client.post(reverse("mi_perfil"), {"accion": "datos", "first_name": "Ana", "last_name": "López", "email": "ana@example.test"})
+        self.assertRedirects(respuesta, reverse("mi_perfil"))
+        self.empleada.refresh_from_db()
+        self.assertEqual(self.empleada.first_name, "Ana")
+        self.assertTrue(PerfilUsuario.objects.filter(usuario=self.empleada).exists())
+
+    def test_cambio_contrasena_conserva_sesion(self):
+        self.client.login(username="empleada-v1", password="ClaveSegura1")
+        respuesta = self.client.post(reverse("mi_perfil"), {"accion": "contrasena", "old_password": "ClaveSegura1", "new_password1": "NuevaClave2", "new_password2": "NuevaClave2"})
+        self.assertRedirects(respuesta, reverse("mi_perfil"))
+        self.assertTrue(self.client.login(username="empleada-v1", password="NuevaClave2"))
+
+    def test_perfil_y_notificaciones_son_propios_de_empleada(self):
+        Tarea.objects.create(titulo="Control", asignada_a=self.personal, fecha=date.today() - timedelta(days=1), turno=Tarea.Turno.MANANA)
+        self.client.login(username="empleada-v1", password="ClaveSegura1")
+        self.assertEqual(self.client.get(reverse("mi_perfil")).status_code, 200)
+        respuesta = self.client.get(reverse("notificaciones"))
+        self.assertContains(respuesta, "tarea(s) pendientes")
+        self.assertEqual(self.client.get(reverse("backup_generar")).status_code, 403)
+
+    def test_backup_es_descargable_y_restringido(self):
+        self.client.login(username="admin-v1", password="ClaveSegura1")
+        respuesta = self.client.post(reverse("backup_generar"))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta["Content-Type"], "application/zip")
+        with zipfile.ZipFile(BytesIO(b"".join(respuesta.streaming_content) if hasattr(respuesta, "streaming_content") else respuesta.content)) as archivo:
+            self.assertIn("RESTAURAR.txt", archivo.namelist())
+
+    def test_acerca_del_sistema_requiere_login_y_es_visible(self):
+        self.assertRedirects(self.client.get(reverse("acerca_sistema")), f"{reverse('login')}?next={reverse('acerca_sistema')}")
+        self.client.login(username="admin-v1", password="ClaveSegura1")
+        self.assertContains(self.client.get(reverse("acerca_sistema")), "Sistema de Gestión Integral")

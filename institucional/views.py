@@ -2,20 +2,25 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from datetime import date, timedelta
 import calendar
 import json
+from io import BytesIO
+from pathlib import Path
+import zipfile
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import login, update_session_auth_hash
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import ActivarCuentaForm, AjusteMontoForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente, Tarea
+from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import enviar_pdf, excel_response, pdf_response
 
 
@@ -94,7 +99,7 @@ class InicioView(LoginRequiredMixin, TemplateView):
             item["deuda"] += pago.saldo_pendiente
         meses = self.meses_recientes(mes, anio)
         etiquetas_meses = [f"{self.nombres_meses[m][:3]} {a}" for m, a in meses]
-        ingresos_serie, egresos_serie, facturado_serie, cobrado_serie = [], [], [], []
+        ingresos_serie, egresos_serie, facturado_serie, cobrado_serie, deuda_serie, ocupacion_serie = [], [], [], [], [], []
         for mes_serie, anio_serie in meses:
             desde, hasta = self.rango_mes(mes_serie, anio_serie)
             movimientos_serie = movimientos.filter(fecha__range=(desde, hasta))
@@ -106,6 +111,11 @@ class InicioView(LoginRequiredMixin, TemplateView):
             if geriatrico_id:
                 abonos_serie = abonos_serie.filter(pago__residente__geriatrico_id=geriatrico_id)
             cobrado_serie.append(float(abonos_serie.aggregate(total=Sum("monto"))["total"] or 0))
+            deuda_serie.append(float(sum((pago.saldo_pendiente for pago in pagos_serie.prefetch_related("abonos")), Decimal("0.00"))))
+            activos_mes = Residente.objects.filter(estado=Residente.Estado.ACTIVO, fecha_ingreso__lte=hasta)
+            if geriatrico_id:
+                activos_mes = activos_mes.filter(geriatrico_id=geriatrico_id)
+            ocupacion_serie.append(float(activos_mes.count() / capacidad_total * 100) if capacidad_total else 0)
         estados_pago = [(estado, pagos.filter(estado=estado).count()) for estado, _ in Pago.Estado.choices]
         egresos_categoria = movimientos_mes.filter(tipo=CajaMovimiento.Tipo.EGRESO, categoria__isnull=False).values("categoria__nombre").annotate(total=Sum("importe")).order_by("categoria__nombre")
         obras_sociales = Residente.objects.filter(estado=Residente.Estado.ACTIVO)
@@ -142,6 +152,9 @@ class InicioView(LoginRequiredMixin, TemplateView):
             "grafico_pagos": json.dumps({"labels": [estado for estado, total in estados_pago if total], "data": [total for estado, total in estados_pago if total]}),
             "grafico_egresos": json.dumps({"labels": [item["categoria__nombre"] for item in egresos_categoria], "data": [float(item["total"]) for item in egresos_categoria]}),
             "grafico_facturacion": json.dumps({"labels": etiquetas_meses, "facturado": facturado_serie, "cobrado": cobrado_serie}),
+            "grafico_deuda": json.dumps({"labels": etiquetas_meses, "data": deuda_serie}),
+            "grafico_ocupacion_mensual": json.dumps({"labels": etiquetas_meses, "data": ocupacion_serie}),
+            "cumplimiento_tareas": (Tarea.objects.filter(estado=Tarea.Estado.COMPLETADA).count() / Tarea.objects.count() * 100) if Tarea.objects.exists() else 0,
             "grafico_obras": json.dumps({"labels": [item["obra_social"] or "Sin cobertura" for item in obras_sociales], "data": [item["total"] for item in obras_sociales]}),
         })
         return context
@@ -196,7 +209,77 @@ class MiPerfilView(LoginRequiredMixin, PersonalActualMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["personal"] = self.personal_actual()
+        perfil, _ = PerfilUsuario.objects.get_or_create(usuario=self.request.user)
+        context.update({
+            "personal": self.personal_actual(), "perfil": perfil,
+            "usuario_form": kwargs.get("usuario_form", PerfilUsuarioForm(instance=self.request.user)),
+            "foto_form": kwargs.get("foto_form", FotoPerfilForm(instance=perfil)),
+            "password_form": kwargs.get("password_form", CambioContrasenaForm(self.request.user)),
+        })
+        return context
+
+    def post(self, request, *args, **kwargs):
+        perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
+        if request.POST.get("accion") == "datos":
+            usuario_form = PerfilUsuarioForm(request.POST, instance=request.user)
+            foto_form = FotoPerfilForm(request.FILES, instance=perfil)
+            if usuario_form.is_valid() and foto_form.is_valid():
+                usuario_form.save(); foto_form.save()
+                messages.success(request, "Tu perfil fue actualizado.")
+                return redirect("mi_perfil")
+            return self.render_to_response(self.get_context_data(usuario_form=usuario_form, foto_form=foto_form))
+        password_form = CambioContrasenaForm(request.user, request.POST)
+        if password_form.is_valid():
+            usuario = password_form.save(); update_session_auth_hash(request, usuario)
+            messages.success(request, "Tu contraseña fue actualizada.")
+            return redirect("mi_perfil")
+        return self.render_to_response(self.get_context_data(password_form=password_form))
+
+
+class NotificacionesView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/notificaciones.html"
+
+
+class BackupView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self):
+        return self.request.user.is_staff
+
+    def post(self, request):
+        ahora = timezone.localtime().strftime("%Y%m%d-%H%M%S")
+        contenido = BytesIO()
+        with zipfile.ZipFile(contenido, "w", zipfile.ZIP_DEFLATED) as archivo:
+            db = Path(settings.DATABASES["default"]["NAME"])
+            if db.exists():
+                archivo.write(db, "db.sqlite3")
+            media = Path(settings.MEDIA_ROOT)
+            if media.exists():
+                for ruta in media.rglob("*"):
+                    if ruta.is_file():
+                        archivo.write(ruta, Path("media") / ruta.relative_to(media))
+            archivo.writestr("RESTAURAR.txt", "Ver docs/guia_backup_restauracion.md para restaurar este respaldo manualmente.")
+        datos = contenido.getvalue()
+        destino = Path(settings.BASE_DIR) / "backups"
+        destino.mkdir(exist_ok=True)
+        nombre = f"dulce-atardecer-backup-{ahora}.zip"
+        (destino / nombre).write_bytes(datos)
+        response = HttpResponse(datos, content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="{nombre}"'
+        return response
+
+
+class AcercaSistemaView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/acerca_sistema.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        backups = Path(settings.BASE_DIR).glob("backups/*.zip")
+        ultimo = max(backups, key=lambda ruta: ruta.stat().st_mtime, default=None)
+        db = Path(settings.BASE_DIR) / "db.sqlite3"
+        context.update({
+            "fecha_instalacion": date.fromtimestamp(db.stat().st_ctime) if db.exists() else None,
+            "ultima_actualizacion": date.fromtimestamp(Path(settings.BASE_DIR).stat().st_mtime),
+            "ultimo_backup": timezone.datetime.fromtimestamp(ultimo.stat().st_mtime, tz=timezone.get_current_timezone()) if ultimo else None,
+        })
         return context
 
 
@@ -787,7 +870,9 @@ class ConfiguracionView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         configuracion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
-        context.update({"institucion_form": kwargs.get("institucion_form", ConfiguracionInstitucionalForm(instance=configuracion)), "obras": ObraSocial.objects.all(), "medios": MedioPagoConfiguracion.objects.all(), "porcentajes": PorcentajeActualizacion.objects.all(), "categorias": CategoriaCaja.objects.all(), "historial_envios": HistorialEnvioEmail.objects.select_related("usuario").order_by("-fecha")[:20], "obra_form": ObraSocialForm(), "medio_form": MedioPagoConfiguracionForm(), "porcentaje_form": PorcentajeActualizacionForm(), "categoria_form": CategoriaCajaForm()})
+        backups = Path(settings.BASE_DIR).glob("backups/*.zip")
+        ultimo = max(backups, key=lambda ruta: ruta.stat().st_mtime, default=None)
+        context.update({"institucion_form": kwargs.get("institucion_form", ConfiguracionInstitucionalForm(instance=configuracion)), "obras": ObraSocial.objects.all(), "medios": MedioPagoConfiguracion.objects.all(), "porcentajes": PorcentajeActualizacion.objects.all(), "categorias": CategoriaCaja.objects.all(), "historial_envios": HistorialEnvioEmail.objects.select_related("usuario").order_by("-fecha")[:20], "obra_form": ObraSocialForm(), "medio_form": MedioPagoConfiguracionForm(), "porcentaje_form": PorcentajeActualizacionForm(), "categoria_form": CategoriaCajaForm(), "ultimo_backup": timezone.datetime.fromtimestamp(ultimo.stat().st_mtime, tz=timezone.get_current_timezone()) if ultimo else None})
         return context
 
     def post(self, request):

@@ -1,5 +1,7 @@
 .env
 db.sqlite3
 staticfiles/
+backups/
+media/
 __pycache__/
 *.py[cod]
