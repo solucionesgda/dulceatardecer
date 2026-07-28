@@ -11,7 +11,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import AjusteMontoForm, CategoriaCajaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
+from .forms import AjusteMontoForm, CategoriaCajaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente
 from .reportes import enviar_pdf, excel_response, pdf_response
 
@@ -237,7 +237,7 @@ class PagoDetailView(LoginRequiredMixin, DetailView):
         return self.render_to_response(self.get_context_data(abono_form=form))
 
 
-class EnviarComprobanteView(LoginRequiredMixin, View):
+class EnviarComprobanteLegacyView(LoginRequiredMixin, View):
     def post(self, request, pk):
         pago = get_object_or_404(Pago.objects.select_related("residente__geriatrico"), pk=pk); destino = pago.residente.email_contacto; institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
         try:
@@ -249,7 +249,7 @@ class EnviarComprobanteView(LoginRequiredMixin, View):
         return redirect("pago_detail",pk=pk)
 
 
-class EnviarEstadoCuentaView(LoginRequiredMixin, View):
+class EnviarEstadoCuentaLegacyView(LoginRequiredMixin, View):
     def post(self, request, pk):
         residente=get_object_or_404(Residente,pk=pk); institucion,_=ConfiguracionInstitucional.objects.get_or_create(pk=1); destino=residente.email_contacto
         try:
@@ -260,6 +260,75 @@ class EnviarEstadoCuentaView(LoginRequiredMixin, View):
         except Exception as error:
             HistorialEnvioEmail.objects.create(usuario=request.user,destinatario=destino or "sin-email@example.invalid",documento="Estado de cuenta",resultado="Error",error=str(error)); messages.error(request,f"No se pudo enviar: {error}")
         return redirect("residente_detail",pk=pk)
+
+
+class EnvioDocumentoView(LoginRequiredMixin, View):
+    template_name = "institucional/confirmar_envio_email.html"
+    documento = ""
+    nombre_pdf = ""
+
+    def get_objeto(self, pk):
+        raise NotImplementedError
+
+    def asunto_predeterminado(self, objeto):
+        raise NotImplementedError
+
+    def generar_pdf(self, objeto, institucion, usuario):
+        raise NotImplementedError
+
+    def url_volver(self, objeto):
+        raise NotImplementedError
+
+    def get(self, request, pk):
+        objeto = self.get_objeto(pk)
+        destinatario = objeto.residente.email_contacto if hasattr(objeto, "residente") else objeto.email_contacto
+        form = EnvioEmailForm(initial={"destinatario": destinatario, "asunto": self.asunto_predeterminado(objeto), "mensaje": "Adjuntamos el documento solicitado."})
+        return self.render_to_response(request, objeto, form)
+
+    def post(self, request, pk):
+        objeto = self.get_objeto(pk)
+        form = EnvioEmailForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(request, objeto, form)
+        destinatario = form.cleaned_data["destinatario"]
+        try:
+            institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+            pdf = self.generar_pdf(objeto, institucion, request.user)
+            enviar_pdf(institucion, destinatario, form.cleaned_data["asunto"], pdf, self.nombre_pdf, form.cleaned_data["mensaje"])
+            HistorialEnvioEmail.objects.create(usuario=request.user, destinatario=destinatario, documento=self.documento, resultado="Enviado")
+            messages.success(request, f"{self.documento} enviado correctamente.")
+        except Exception as error:
+            detalle = str(error) if isinstance(error, ValueError) else "No se pudo conectar o autenticar con el servidor SMTP."
+            HistorialEnvioEmail.objects.create(usuario=request.user, destinatario=destinatario, documento=self.documento, resultado="Error", error=detalle)
+            messages.error(request, f"No se pudo enviar el email: {detalle}")
+        return redirect(self.url_volver(objeto))
+
+    def render_to_response(self, request, objeto, form):
+        from django.shortcuts import render
+        return render(request, self.template_name, {"form": form, "objeto": objeto, "documento": self.documento, "nombre_pdf": self.nombre_pdf, "url_volver": self.url_volver(objeto)})
+
+
+class EnviarComprobanteView(EnvioDocumentoView):
+    documento = "Comprobante"
+    nombre_pdf = "comprobante.pdf"
+
+    def get_objeto(self, pk): return get_object_or_404(Pago.objects.select_related("residente__geriatrico"), pk=pk)
+    def asunto_predeterminado(self, objeto): return f"Comprobante de pago - {objeto.periodo}"
+    def url_volver(self, objeto): return reverse("pago_detail", kwargs={"pk": objeto.pk})
+    def generar_pdf(self, objeto, institucion, usuario):
+        return pdf_response("Comprobante", ["Residente", "Período", "Concepto", "Monto", "Abonado", "Saldo"], [(objeto.residente, objeto.periodo, objeto.concepto, objeto.monto, objeto.total_abonado, objeto.saldo_pendiente)], institucion, usuario).content
+
+
+class EnviarEstadoCuentaView(EnvioDocumentoView):
+    documento = "Estado de cuenta"
+    nombre_pdf = "estado_cuenta.pdf"
+
+    def get_objeto(self, pk): return get_object_or_404(Residente, pk=pk)
+    def asunto_predeterminado(self, objeto): return "Estado de cuenta"
+    def url_volver(self, objeto): return reverse("residente_detail", kwargs={"pk": objeto.pk})
+    def generar_pdf(self, objeto, institucion, usuario):
+        filas = [(p.periodo, p.concepto, p.monto, p.total_abonado, p.saldo_pendiente, p.estado) for p in objeto.pagos.all()]
+        return pdf_response("Estado de cuenta", ["Período", "Concepto", "Monto", "Abonado", "Saldo", "Estado"], filas, institucion, usuario).content
 
 
 class GenerarCuotasView(LoginRequiredMixin, TemplateView):
@@ -458,7 +527,7 @@ class ConfiguracionView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         configuracion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
-        context.update({"institucion_form": kwargs.get("institucion_form", ConfiguracionInstitucionalForm(instance=configuracion)), "obras": ObraSocial.objects.all(), "medios": MedioPagoConfiguracion.objects.all(), "porcentajes": PorcentajeActualizacion.objects.all(), "categorias": CategoriaCaja.objects.all(), "obra_form": ObraSocialForm(), "medio_form": MedioPagoConfiguracionForm(), "porcentaje_form": PorcentajeActualizacionForm(), "categoria_form": CategoriaCajaForm()})
+        context.update({"institucion_form": kwargs.get("institucion_form", ConfiguracionInstitucionalForm(instance=configuracion)), "obras": ObraSocial.objects.all(), "medios": MedioPagoConfiguracion.objects.all(), "porcentajes": PorcentajeActualizacion.objects.all(), "categorias": CategoriaCaja.objects.all(), "historial_envios": HistorialEnvioEmail.objects.select_related("usuario").order_by("-fecha")[:20], "obra_form": ObraSocialForm(), "medio_form": MedioPagoConfiguracionForm(), "porcentaje_form": PorcentajeActualizacionForm(), "categoria_form": CategoriaCajaForm()})
         return context
 
     def post(self, request):

@@ -39,9 +39,17 @@ def pdf_response(titulo, columnas, filas, institucion, usuario, textos_adicional
     respuesta = HttpResponse(salida.getvalue(), content_type="application/pdf"); respuesta["Content-Disposition"] = f'attachment; filename="{titulo}.pdf"'; return respuesta
 
 
-def enviar_pdf(institucion, destinatario, asunto, pdf, nombre):
+def validar_configuracion_smtp(institucion):
+    if institucion.smtp_tls and institucion.smtp_ssl:
+        raise ValueError("La configuración SMTP no puede usar TLS y SSL al mismo tiempo.")
+    if not all((institucion.smtp_servidor, institucion.smtp_puerto, institucion.smtp_usuario, institucion.smtp_contrasena)):
+        raise ValueError("La configuración SMTP está incompleta.")
+
+
+def enviar_pdf(institucion, destinatario, asunto, pdf, nombre, mensaje_texto="Adjuntamos el documento solicitado."):
+    validar_configuracion_smtp(institucion)
     conexion = get_connection(host=institucion.smtp_servidor, port=institucion.smtp_puerto, username=institucion.smtp_usuario, password=institucion.smtp_contrasena, use_tls=institucion.smtp_tls, use_ssl=institucion.smtp_ssl)
     remitente = institucion.smtp_remitente or institucion.smtp_usuario
     if institucion.smtp_nombre_remitente: remitente = f"{institucion.smtp_nombre_remitente} <{remitente}>"
-    mensaje = EmailMessage(asunto, "Adjuntamos el comprobante solicitado.", remitente, [destinatario], connection=conexion)
+    mensaje = EmailMessage(asunto, mensaje_texto, remitente, [destinatario], connection=conexion)
     mensaje.attach(nombre, pdf, "application/pdf"); mensaje.send(fail_silently=False)

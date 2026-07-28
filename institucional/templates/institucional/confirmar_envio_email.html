@@ -1,0 +1,4 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-lg-7"><div class="card shadow-sm"><div class="card-body"><h1 class="h3">Enviar {{ documento }} por email</h1><p class="text-muted">Revise los datos antes de confirmar el envío.</p><form method="post">{% csrf_token %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<div class="alert alert-light border">PDF adjunto: <strong>{{ nombre_pdf }}</strong></div><a class="btn btn-outline-secondary" href="{{ url_volver }}">Cancelar</a><button class="btn btn-primary">Enviar</button></form></div></div></div></div>
+{% endblock %}

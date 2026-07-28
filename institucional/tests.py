@@ -1,10 +1,12 @@
 from django.contrib.auth.models import Group, Permission, User
 from django.core.exceptions import ValidationError
+from django.core import mail
 from django.test import TestCase
+from django.test.utils import override_settings
 from django.urls import reverse
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, Geriatrico, GrillaTurnos, Pago, PagoParcial, Personal, Residente
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, Pago, PagoParcial, Personal, Residente
 
 
 class AccesoTest(TestCase):
@@ -181,6 +183,47 @@ class AccesoTest(TestCase):
             response = self.client.get(reverse("turnos_exportar", args=[formato]), {"mes": 2, "anio": 2026})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Content-Type"], contenido)
+
+    def configurar_smtp(self):
+        return ConfiguracionInstitucional.objects.create(nombre_institucion="Dulce Atardecer", smtp_servidor="smtp.example.test", smtp_puerto=587, smtp_usuario="usuario", smtp_contrasena="secreto", smtp_tls=True, smtp_remitente="noreply@example.test")
+
+    def crear_pago_con_email(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri email", codigo="GE", direccion="Calle 1", capacidad_total=3)
+        residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Email", dni="55555555", fecha_ingreso="2026-01-01", contacto_familiar="3411234567", email_contacto="contacto@example.test")
+        return residente, Pago.objects.create(residente=residente, periodo="2026-07", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+
+    def test_botones_email_y_destinatario_precargado(self):
+        residente, pago = self.crear_pago_con_email()
+        self.client.login(username="consulta", password="clave-segura")
+        self.assertContains(self.client.get(reverse("pago_detail", args=[pago.pk])), "Enviar comprobante por email")
+        self.assertContains(self.client.get(reverse("residente_detail", args=[residente.pk])), "Enviar estado de cuenta por email")
+        self.assertContains(self.client.get(reverse("enviar_comprobante", args=[pago.pk])), "contacto@example.test")
+        self.assertContains(self.client.get(reverse("enviar_estado_cuenta", args=[residente.pk])), "contacto@example.test")
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_envio_comprobante_adjunta_pdf_y_registra_historial(self):
+        self.configurar_smtp(); _, pago = self.crear_pago_con_email(); self.client.login(username="consulta", password="clave-segura")
+        response = self.client.post(reverse("enviar_comprobante", args=[pago.pk]), {"destinatario": "destino@example.test", "asunto": "Comprobante", "mensaje": "Adjunto"})
+        self.assertRedirects(response, reverse("pago_detail", args=[pago.pk]))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["destino@example.test"])
+        self.assertEqual(mail.outbox[0].attachments[0][0], "comprobante.pdf")
+        self.assertTrue(HistorialEnvioEmail.objects.filter(documento="Comprobante", resultado="Enviado").exists())
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_envio_estado_cuenta_registra_historial(self):
+        self.configurar_smtp(); residente, _ = self.crear_pago_con_email(); self.client.login(username="consulta", password="clave-segura")
+        response = self.client.post(reverse("enviar_estado_cuenta", args=[residente.pk]), {"destinatario": "destino@example.test", "asunto": "Estado", "mensaje": "Adjunto"})
+        self.assertRedirects(response, reverse("residente_detail", args=[residente.pk]))
+        self.assertEqual(mail.outbox[0].attachments[0][0], "estado_cuenta.pdf")
+        self.assertTrue(HistorialEnvioEmail.objects.filter(documento="Estado de cuenta", resultado="Enviado").exists())
+
+    def test_configuracion_smtp_incompleta_registra_error(self):
+        _, pago = self.crear_pago_con_email(); self.client.login(username="consulta", password="clave-segura")
+        self.client.post(reverse("enviar_comprobante", args=[pago.pk]), {"destinatario": "destino@example.test", "asunto": "Comprobante", "mensaje": "Adjunto"})
+        historial = HistorialEnvioEmail.objects.get(documento="Comprobante")
+        self.assertEqual(historial.resultado, "Error")
+        self.assertIn("incompleta", historial.error)
 
 
 class GeriatricoTest(TestCase):
