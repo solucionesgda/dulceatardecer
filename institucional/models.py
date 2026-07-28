@@ -6,6 +6,7 @@ from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Sum
 from django.conf import settings
+from django.utils import timezone
 
 
 class Geriatrico(models.Model):
@@ -434,6 +435,7 @@ class Personal(models.Model):
         OTRO = "Otro", "Otro"
 
     nombre_completo = models.CharField(max_length=150)
+    usuario = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="perfil_personal")
     dni = models.CharField(max_length=20, unique=True, validators=[RegexValidator(r"^\d+$", "El DNI solo puede contener números.")])
     cargo = models.CharField(max_length=30, choices=Cargo.choices)
     turno_habitual = models.CharField(max_length=10, choices=[("Mañana", "Mañana"), ("Tarde", "Tarde"), ("Noche", "Noche")])
@@ -475,3 +477,72 @@ class AsignacionTurno(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["grilla", "personal", "dia"], name="turno_unico_por_dia")]
+
+
+class Tarea(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE = "Pendiente", "Pendiente"
+        EN_PROCESO = "En proceso", "En proceso"
+        COMPLETADA = "Completada", "Completada"
+
+    class Turno(models.TextChoices):
+        MANANA = "M", "Mañana"
+        TARDE = "T", "Tarde"
+        NOCHE = "N", "Noche"
+
+    titulo = models.CharField(max_length=180)
+    descripcion = models.TextField(blank=True)
+    asignada_a = models.ForeignKey(Personal, on_delete=models.PROTECT, related_name="tareas")
+    fecha = models.DateField()
+    turno = models.CharField(max_length=1, choices=Turno.choices)
+    estado = models.CharField(max_length=15, choices=Estado.choices, default=Estado.PENDIENTE)
+    observacion_completado = models.TextField(blank=True)
+    completada_en = models.DateTimeField(blank=True, null=True)
+    completada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="tareas_completadas")
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["fecha", "turno", "titulo"]
+        verbose_name = "tarea"
+        verbose_name_plural = "tareas"
+
+    @property
+    def vencida(self):
+        return self.estado != self.Estado.COMPLETADA and self.fecha < date.today()
+
+    def completar(self, usuario, observacion=""):
+        self.estado = self.Estado.COMPLETADA
+        self.observacion_completado = observacion
+        self.completada_en = timezone.now()
+        self.completada_por = usuario
+        self.save(update_fields=("estado", "observacion_completado", "completada_en", "completada_por"))
+
+    def __str__(self):
+        return self.titulo
+
+
+class NormaPolitica(models.Model):
+    titulo = models.CharField(max_length=180)
+    contenido = models.TextField()
+    documento = models.FileField(upload_to="normas/", blank=True, null=True)
+    publicada_en = models.DateTimeField(auto_now_add=True)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["-publicada_en"]
+        verbose_name = "norma o política"
+        verbose_name_plural = "normas y políticas"
+
+    def __str__(self):
+        return self.titulo
+
+
+class LecturaNormaPolitica(models.Model):
+    norma = models.ForeignKey(NormaPolitica, on_delete=models.CASCADE, related_name="lecturas")
+    personal = models.ForeignKey(Personal, on_delete=models.CASCADE, related_name="lecturas_normas")
+    leido_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("norma", "personal"), name="lectura_norma_unica_por_personal")]
+        verbose_name = "lectura de norma"
+        verbose_name_plural = "lecturas de normas"

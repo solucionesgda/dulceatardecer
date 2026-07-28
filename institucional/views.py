@@ -1,4 +1,4 @@
-from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin, UserPassesTestMixin
 from datetime import date, timedelta
 import calendar
 import json
@@ -10,10 +10,11 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import AjusteMontoForm, CategoriaCajaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente
+from .forms import AjusteMontoForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PersonalForm, PorcentajeActualizacionForm
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import enviar_pdf, excel_response, pdf_response
 
 
@@ -141,6 +142,122 @@ class InicioView(LoginRequiredMixin, TemplateView):
             "grafico_egresos": json.dumps({"labels": [item["categoria__nombre"] for item in egresos_categoria], "data": [float(item["total"]) for item in egresos_categoria]}),
             "grafico_facturacion": json.dumps({"labels": etiquetas_meses, "facturado": facturado_serie, "cobrado": cobrado_serie}),
             "grafico_obras": json.dumps({"labels": [item["obra_social"] or "Sin cobertura" for item in obras_sociales], "data": [item["total"] for item in obras_sociales]}),
+        })
+        return context
+
+
+class PersonalActualMixin:
+    def personal_actual(self):
+        try:
+            return self.request.user.perfil_personal
+        except Personal.DoesNotExist:
+            return None
+
+
+class TareasListView(LoginRequiredMixin, PersonalActualMixin, ListView):
+    model = Tarea
+    template_name = "institucional/tarea_list.html"
+
+    def get_queryset(self):
+        queryset = Tarea.objects.select_related("asignada_a", "completada_por")
+        if self.request.user.is_staff:
+            return queryset
+        personal = self.personal_actual()
+        return queryset.filter(asignada_a=personal) if personal else queryset.none()
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        personal = self.personal_actual()
+        context.update({
+            "personal_actual": personal,
+            "tareas_pendientes": self.get_queryset().exclude(estado=Tarea.Estado.COMPLETADA).count(),
+            "tareas_vencidas": self.get_queryset().exclude(estado=Tarea.Estado.COMPLETADA, fecha__gte=date.today()).count(),
+        })
+        return context
+
+
+class TareaEnProcesoView(LoginRequiredMixin, PersonalActualMixin, View):
+    def post(self, request, pk):
+        personal = self.personal_actual()
+        tarea = get_object_or_404(Tarea, pk=pk, asignada_a=personal)
+        if tarea.estado == Tarea.Estado.PENDIENTE:
+            tarea.estado = Tarea.Estado.EN_PROCESO
+            tarea.save(update_fields=("estado",))
+            messages.success(request, "Tarea marcada como en proceso.")
+        return redirect("tarea_list")
+
+
+class TareaCompletarView(LoginRequiredMixin, PersonalActualMixin, TemplateView):
+    template_name = "institucional/tarea_completar.html"
+
+    def get_tarea(self):
+        return get_object_or_404(Tarea, pk=self.kwargs["pk"], asignada_a=self.personal_actual())
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({"tarea": self.get_tarea(), "form": kwargs.get("form", CompletarTareaForm())})
+        return context
+
+    def post(self, request, *args, **kwargs):
+        tarea = self.get_tarea()
+        form = CompletarTareaForm(request.POST)
+        if form.is_valid():
+            tarea.completar(request.user, form.cleaned_data["observacion"])
+            messages.success(request, "Tarea completada y registrada correctamente.")
+            return redirect("tarea_list")
+        return self.render_to_response(self.get_context_data(form=form))
+
+
+class NormasListView(LoginRequiredMixin, PersonalActualMixin, ListView):
+    model = NormaPolitica
+    template_name = "institucional/norma_list.html"
+
+    def get_queryset(self):
+        queryset = NormaPolitica.objects.prefetch_related("lecturas")
+        return queryset if self.request.user.is_staff else queryset.filter(activa=True)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        personal = self.personal_actual()
+        leidas = set()
+        if personal:
+            leidas = set(LecturaNormaPolitica.objects.filter(personal=personal).values_list("norma_id", flat=True))
+        context.update({"personal_actual": personal, "normas_leidas": leidas})
+        return context
+
+
+class NormaMarcarLeidaView(LoginRequiredMixin, PersonalActualMixin, View):
+    def post(self, request, pk):
+        personal = self.personal_actual()
+        norma = get_object_or_404(NormaPolitica, pk=pk, activa=True)
+        if not personal:
+            messages.error(request, "Tu usuario no está vinculado a una ficha de personal.")
+        else:
+            LecturaNormaPolitica.objects.get_or_create(norma=norma, personal=personal)
+            messages.success(request, "Norma marcada como leída.")
+        return redirect("norma_list")
+
+
+class PanelTareasAdminView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    template_name = "institucional/tarea_panel.html"
+
+    def test_func(self):
+        return self.request.user.is_staff
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        tareas = Tarea.objects.select_related("asignada_a")
+        cumplimiento = []
+        for persona in Personal.objects.filter(estado=Personal.Estado.ACTIVO):
+            total = tareas.filter(asignada_a=persona).count()
+            completadas = tareas.filter(asignada_a=persona, estado=Tarea.Estado.COMPLETADA).count()
+            cumplimiento.append({"personal": persona, "total": total, "completadas": completadas, "porcentaje": (completadas / total * 100) if total else 0})
+        context.update({
+            "pendientes": tareas.filter(estado=Tarea.Estado.PENDIENTE).count(),
+            "completadas": tareas.filter(estado=Tarea.Estado.COMPLETADA).count(),
+            "vencidas": tareas.exclude(estado=Tarea.Estado.COMPLETADA, fecha__gte=date.today()).count(),
+            "cumplimiento": cumplimiento,
+            "ultimas_tareas": tareas.order_by("fecha", "turno")[:10],
         })
         return context
 

@@ -6,7 +6,7 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, Pago, PagoParcial, Personal, Residente
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
 
 
 class AccesoTest(TestCase):
@@ -236,6 +236,47 @@ class AccesoTest(TestCase):
         historial = HistorialEnvioEmail.objects.get(documento="Comprobante")
         self.assertEqual(historial.resultado, "Error")
         self.assertIn("incompleta", historial.error)
+
+
+class TareasTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("empleada", password="clave-segura")
+        otro_usuario = User.objects.create_user("otra", password="clave-segura")
+        self.personal = Personal.objects.create(usuario=self.usuario, nombre_completo="Ana Empleada", dni="33444555", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Mañana", inicio_contrato=date.today())
+        self.otra_personal = Personal.objects.create(usuario=otro_usuario, nombre_completo="Berta Empleada", dni="44555666", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Tarde", inicio_contrato=date.today())
+
+    def test_empleada_solo_ve_sus_tareas(self):
+        propia = Tarea.objects.create(titulo="Tarea propia", asignada_a=self.personal, fecha=date.today(), turno=Tarea.Turno.MANANA)
+        Tarea.objects.create(titulo="Tarea ajena", asignada_a=self.otra_personal, fecha=date.today(), turno=Tarea.Turno.TARDE)
+        self.client.login(username="empleada", password="clave-segura")
+        response = self.client.get(reverse("tarea_list"))
+        self.assertContains(response, propia.titulo)
+        self.assertNotContains(response, "Tarea ajena")
+
+    def test_completar_tarea_registra_usuario_fecha_y_observacion(self):
+        tarea = Tarea.objects.create(titulo="Control", asignada_a=self.personal, fecha=date.today(), turno=Tarea.Turno.MANANA)
+        self.client.login(username="empleada", password="clave-segura")
+        response = self.client.post(reverse("tarea_completar", args=[tarea.pk]), {"observacion": "Realizada sin novedades."})
+        self.assertRedirects(response, reverse("tarea_list"))
+        tarea.refresh_from_db()
+        self.assertEqual(tarea.estado, Tarea.Estado.COMPLETADA)
+        self.assertEqual(tarea.completada_por, self.usuario)
+        self.assertIsNotNone(tarea.completada_en)
+        self.assertEqual(tarea.observacion_completado, "Realizada sin novedades.")
+
+    def test_norma_se_puede_marcar_como_leida(self):
+        norma = NormaPolitica.objects.create(titulo="Higiene", contenido="Instrucciones de higiene.")
+        self.client.login(username="empleada", password="clave-segura")
+        response = self.client.post(reverse("norma_leer", args=[norma.pk]))
+        self.assertRedirects(response, reverse("norma_list"))
+        self.assertTrue(LecturaNormaPolitica.objects.filter(norma=norma, personal=self.personal).exists())
+
+    def test_panel_de_tareas_es_solo_para_administracion(self):
+        self.client.login(username="empleada", password="clave-segura")
+        self.assertEqual(self.client.get(reverse("tarea_panel")).status_code, 403)
+        administrador = User.objects.create_user("admin-tareas", password="clave-segura", is_staff=True)
+        self.client.login(username="admin-tareas", password="clave-segura")
+        self.assertEqual(self.client.get(reverse("tarea_panel")).status_code, 200)
 
 
 class GeriatricoTest(TestCase):

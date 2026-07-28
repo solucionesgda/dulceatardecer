@@ -2,7 +2,7 @@ from django import forms
 from datetime import date
 from decimal import Decimal
 
-from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente
+from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, Personal, PorcentajeActualizacion, Residente, Tarea
 
 
 class GeriatricoForm(forms.ModelForm):
@@ -121,6 +121,10 @@ class EnvioEmailForm(forms.Form):
     destinatario = forms.EmailField(label="Destinatario")
     asunto = forms.CharField(max_length=200, label="Asunto")
     mensaje = forms.CharField(label="Mensaje", widget=forms.Textarea(attrs={"rows": 4}))
+
+
+class CompletarTareaForm(forms.Form):
+    observacion = forms.CharField(label="Observación de finalización", required=False, widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Detalle opcional sobre la tarea realizada."}))
 
 
 class ObraSocialForm(forms.ModelForm):

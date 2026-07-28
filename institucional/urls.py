@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AjusteMontoView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TurnosView
+from .views import AjusteMontoView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, NormaMarcarLeidaView, NormasListView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
     path("login/", auth_views.LoginView.as_view(template_name="registration/login.html"), name="login"),
@@ -24,6 +24,12 @@ urlpatterns = [
     path("caja/categorias/", CategoriaCajaListView.as_view(), name="categoria_caja_list"),
     path("caja/cerrar/", CajaCierreView.as_view(), name="caja_cierre"),
     path("configuracion/", ConfiguracionView.as_view(), name="configuracion"),
+    path("tareas/", TareasListView.as_view(), name="tarea_list"),
+    path("tareas/panel/", PanelTareasAdminView.as_view(), name="tarea_panel"),
+    path("tareas/<int:pk>/iniciar/", TareaEnProcesoView.as_view(), name="tarea_iniciar"),
+    path("tareas/<int:pk>/completar/", TareaCompletarView.as_view(), name="tarea_completar"),
+    path("normas/", NormasListView.as_view(), name="norma_list"),
+    path("normas/<int:pk>/leer/", NormaMarcarLeidaView.as_view(), name="norma_leer"),
     path("personal/", PersonalListView.as_view(), name="personal_list"), path("personal/exportar/<str:formato>/", ExportarPersonalView.as_view(), name="personal_exportar"), path("personal/nuevo/", PersonalCreateView.as_view(), name="personal_create"), path("turnos/", TurnosView.as_view(), name="turnos"), path("turnos/exportar/<str:formato>/", ExportarTurnosView.as_view(), name="turnos_exportar"),
     path("geriátricos/", GeriatricoListView.as_view(), name="geriatrico_list"),
     path("geriátricos/nuevo/", GeriatricoCreateView.as_view(), name="geriatrico_create"),

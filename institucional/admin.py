@@ -2,7 +2,7 @@ from django.contrib import admin
 from django import forms
 from django.http import JsonResponse
 from django.urls import path, reverse
-from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, HistorialEnvioEmail, Pago, PagoParcial, Residente
+from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, HistorialEnvioEmail, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
 
 
 @admin.register(Geriatrico)
@@ -136,3 +136,34 @@ class HistorialEnvioEmailAdmin(admin.ModelAdmin):
     list_filter = ("resultado", "documento", "fecha")
     search_fields = ("destinatario", "documento", "error")
     readonly_fields = ("fecha", "usuario", "destinatario", "documento", "resultado", "error")
+
+
+@admin.register(Personal)
+class PersonalAdmin(admin.ModelAdmin):
+    list_display = ("nombre_completo", "usuario", "cargo", "turno_habitual", "estado")
+    list_filter = ("cargo", "turno_habitual", "estado")
+    search_fields = ("nombre_completo", "dni", "cuil", "usuario__username")
+
+
+@admin.register(Tarea)
+class TareaAdmin(admin.ModelAdmin):
+    list_display = ("titulo", "asignada_a", "fecha", "turno", "estado", "vencida", "completada_en")
+    list_filter = ("estado", "turno", "fecha", "asignada_a")
+    search_fields = ("titulo", "descripcion", "asignada_a__nombre_completo")
+    readonly_fields = ("creada_en", "completada_en", "completada_por", "observacion_completado")
+
+
+@admin.register(NormaPolitica)
+class NormaPoliticaAdmin(admin.ModelAdmin):
+    list_display = ("titulo", "activa", "publicada_en")
+    list_filter = ("activa", "publicada_en")
+    search_fields = ("titulo", "contenido")
+    readonly_fields = ("publicada_en",)
+
+
+@admin.register(LecturaNormaPolitica)
+class LecturaNormaPoliticaAdmin(admin.ModelAdmin):
+    list_display = ("norma", "personal", "leido_en")
+    list_filter = ("norma", "leido_en")
+    search_fields = ("norma__titulo", "personal__nombre_completo")
+    readonly_fields = ("norma", "personal", "leido_en")

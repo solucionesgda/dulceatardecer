@@ -17,11 +17,14 @@
       <a class="nav-link" href="{% url 'residente_list' %}"><span>◌</span> Residentes</a>
       <a class="nav-link" href="{% url 'personal_list' %}"><span>♧</span> Personal</a>
       <a class="nav-link" href="{% url 'turnos' %}"><span>◷</span> Turnos</a>
+      <a class="nav-link" href="{% url 'tarea_list' %}"><span>✓</span> Tareas</a>
+      <a class="nav-link" href="{% url 'norma_list' %}"><span>▤</span> Normas y políticas</a>
       <a class="nav-link" href="{% url 'pago_list' %}"><span>◇</span> Pagos</a>
       <a class="nav-link" href="{% url 'caja_list' %}"><span>▱</span> Caja</a>
       <a class="nav-link" href="{% url 'configuracion' %}"><span>⚙</span> Configuración</a>
       {% if perms.institucional.view_geriatrico %}<a class="nav-link" href="{% url 'geriatrico_list' %}"><span>⌂</span> Geriátricos</a>{% endif %}
       {% if user.is_staff %}<a class="nav-link" href="{% url 'admin:index' %}"><span>◈</span> Administración</a>{% endif %}
+      {% if user.is_staff %}<a class="nav-link" href="{% url 'tarea_panel' %}"><span>▦</span> Panel de tareas</a>{% endif %}
     </nav>
     <div class="sidebar-bottom mt-auto">
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-sidebar w-100">Cerrar sesión</button></form>
