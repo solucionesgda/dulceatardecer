@@ -1,1 +1,34 @@
-{% extends 'base.html' %}{% block content %}<h1 class="h3">Turnos del personal</h1><form method="get" class="mb-3">Mes <input name="mes" value="{{mes}}" size="2"> Año <input name="anio" value="{{anio}}" size="4"><button class="btn btn-sm btn-primary">Ver</button></form><p>M = Mañana · T = Tarde · N = Noche · F = Franco · L = Licencia · V = Vacaciones</p><form method="post">{% csrf_token %}<div class="table-responsive"><table class="table table-sm"><tr><th>Empleado</th>{% for d in dias %}<th>{{d}}</th>{% endfor %}</tr>{% for p in personal %}<tr><td>{{p.nombre_completo}}</td>{% for d in dias %}<td><select name="turno_{{p.pk}}_{{d}}"><option value=""></option>{% for c,l in codigos %}<option value="{{c}}">{{c}}</option>{% endfor %}</select></td>{% endfor %}</tr>{% endfor %}</table></div><button class="btn btn-primary">Guardar cambios</button></form>{% endblock %}
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+  <h1 class="h3">Turnos del personal</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{% url 'turnos_exportar' 'excel' %}?mes={{ mes }}&anio={{ anio }}">Exportar Excel</a>
+    <a class="btn btn-outline-secondary" href="{% url 'turnos_exportar' 'pdf' %}?mes={{ mes }}&anio={{ anio }}">Exportar PDF</a>
+  </div>
+</div>
+<form method="get" class="mb-3">
+  Mes <input name="mes" value="{{ mes }}" size="2">
+  A&ntilde;o <input name="anio" value="{{ anio }}" size="4">
+  <button class="btn btn-sm btn-primary">Ver</button>
+</form>
+<p>M = Ma&ntilde;ana &middot; T = Tarde &middot; N = Noche &middot; F = Franco &middot; L = Licencia &middot; V = Vacaciones</p>
+<form method="post">
+  {% csrf_token %}
+  <div class="table-responsive">
+    <table class="table table-sm">
+      <tr><th>Empleado</th>{% for d in dias %}<th>{{ d }}</th>{% endfor %}</tr>
+      {% for p in personal %}
+        <tr>
+          <td>{{ p.nombre_completo }}</td>
+          {% for d in dias %}
+            <td><select name="turno_{{ p.pk }}_{{ d }}"><option value=""></option>{% for c,l in codigos %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </table>
+  </div>
+  <button class="btn btn-primary">Guardar cambios</button>
+</form>
+{% endblock %}

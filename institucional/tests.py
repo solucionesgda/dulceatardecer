@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.urls import reverse
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import CajaCierre, CajaMovimiento, CategoriaCaja, Geriatrico, Pago, PagoParcial, Personal, Residente
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, Geriatrico, GrillaTurnos, Pago, PagoParcial, Personal, Residente
 
 
 class AccesoTest(TestCase):
@@ -169,6 +169,16 @@ class AccesoTest(TestCase):
         self.client.login(username="consulta", password="clave-segura")
         for formato, contenido in (("excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), ("pdf", "application/pdf")):
             response = self.client.get(reverse("personal_exportar", args=[formato]), {"estado": Personal.Estado.ACTIVO})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], contenido)
+
+    def test_exportaciones_turnos_respetan_mes_y_anio(self):
+        empleado = Personal.objects.create(nombre_completo="Ana Pérez", dni="87654321", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Mañana", inicio_contrato=date.today())
+        grilla = GrillaTurnos.objects.create(mes=2, anio=2026)
+        AsignacionTurno.objects.create(grilla=grilla, personal=empleado, dia=1, codigo=AsignacionTurno.Codigo.M)
+        self.client.login(username="consulta", password="clave-segura")
+        for formato, contenido in (("excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), ("pdf", "application/pdf")):
+            response = self.client.get(reverse("turnos_exportar", args=[formato]), {"mes": 2, "anio": 2026})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Content-Type"], contenido)
 

@@ -525,3 +525,23 @@ class TurnosView(LoginRequiredMixin, TemplateView):
                 codigo = request.POST.get(f"turno_{empleado.pk}_{dia}", "")
                 AsignacionTurno.objects.update_or_create(grilla=grilla, personal=empleado, dia=dia, defaults={"codigo": codigo})
         messages.success(request, "Turnos actualizados."); return redirect(f"{reverse('turnos')}?mes={self.mes}&anio={self.anio}")
+
+
+class ExportarTurnosView(TurnosView):
+    nombres_meses = ("", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
+
+    def get(self, request, formato):
+        dias = list(range(1, calendar.monthrange(self.anio, self.mes)[1] + 1))
+        personal = Personal.objects.filter(estado=Personal.Estado.ACTIVO)
+        grilla = GrillaTurnos.objects.filter(mes=self.mes, anio=self.anio).first()
+        asignaciones = {}
+        if grilla:
+            asignaciones = {(asignacion.personal_id, asignacion.dia): asignacion.codigo for asignacion in grilla.asignaciones.all()}
+        columnas = ["Empleado", *[str(dia) for dia in dias]]
+        filas = [(empleado.nombre_completo, *[asignaciones.get((empleado.pk, dia), "") for dia in dias]) for empleado in personal]
+        institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        if formato == "excel":
+            return excel_response(f"turnos_{self.anio}_{self.mes:02d}", columnas, filas)
+        periodo = f"{self.nombres_meses[self.mes]} {self.anio}"
+        leyenda = "Leyenda: M = Mañana · T = Tarde · N = Noche · F = Franco · L = Licencia · V = Vacaciones"
+        return pdf_response("Grilla mensual de turnos", columnas, filas, institucion, request.user, textos_adicionales=(f"Período: {periodo}", leyenda), anchos_columnas=[95] + [21] * len(dias), tamano_fuente=5)

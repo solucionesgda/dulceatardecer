@@ -21,7 +21,7 @@ def excel_response(titulo, columnas, filas):
     return respuesta
 
 
-def pdf_response(titulo, columnas, filas, institucion, usuario):
+def pdf_response(titulo, columnas, filas, institucion, usuario, textos_adicionales=(), anchos_columnas=None, tamano_fuente=7):
     salida = BytesIO(); documento = SimpleDocTemplate(salida, pagesize=landscape(letter), leftMargin=24, rightMargin=24, topMargin=24)
     estilos = getSampleStyleSheet(); contenido = []
     try:
@@ -30,9 +30,11 @@ def pdf_response(titulo, columnas, filas, institucion, usuario):
             contenido.extend([Image(ruta_logo, width=55, height=55), Spacer(1, 6)])
     except (AttributeError, OSError, ValueError):
         pass
-    contenido.extend([Paragraph(institucion.nombre_institucion, estilos["Title"]), Paragraph(titulo, estilos["Heading2"]), Paragraph(f"Emitido: {datetime.now():%d/%m/%Y %H:%M} - Usuario: {usuario}", estilos["Normal"]), Spacer(1, 12)])
-    tabla = Table([columnas] + [[str(valor or "") for valor in fila] for fila in filas], repeatRows=1)
-    tabla.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#243b53")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("GRID", (0,0), (-1,-1), .25, colors.grey), ("FONTSIZE", (0,0), (-1,-1), 7), ("VALIGN", (0,0), (-1,-1), "TOP")]))
+    contenido.extend([Paragraph(institucion.nombre_institucion, estilos["Title"]), Paragraph(titulo, estilos["Heading2"]), Paragraph(f"Emitido: {datetime.now():%d/%m/%Y %H:%M} - Usuario: {usuario}", estilos["Normal"])])
+    contenido.extend(Paragraph(texto, estilos["Normal"]) for texto in textos_adicionales)
+    contenido.append(Spacer(1, 12))
+    tabla = Table([columnas] + [[str(valor or "") for valor in fila] for fila in filas], repeatRows=1, colWidths=anchos_columnas)
+    tabla.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#243b53")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("GRID", (0,0), (-1,-1), .25, colors.grey), ("FONTSIZE", (0,0), (-1,-1), tamano_fuente), ("VALIGN", (0,0), (-1,-1), "TOP")]))
     contenido.append(tabla); documento.build(contenido)
     respuesta = HttpResponse(salida.getvalue(), content_type="application/pdf"); respuesta["Content-Disposition"] = f'attachment; filename="{titulo}.pdf"'; return respuesta
 
