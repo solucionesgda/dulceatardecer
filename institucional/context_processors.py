@@ -1,4 +1,5 @@
 from datetime import date
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from .models import Geriatrico, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, Personal, Residente, Tarea
@@ -23,8 +24,11 @@ def notificaciones(request):
             avisos.append({"texto": f"{tareas_vencidas} tarea(s) vencidas", "tipo": "danger", "url": "/tareas/"})
         if invitaciones:
             avisos.append({"texto": f"{invitaciones} invitación(es) pendientes", "tipo": "info", "url": "/personal/"})
-        for geriatrico in Geriatrico.objects.filter(capacidad_total__gt=0):
-            ocupadas = Residente.objects.filter(geriatrico=geriatrico, estado=Residente.Estado.ACTIVO).count()
+        geriatrico_qs = Geriatrico.objects.filter(capacidad_total__gt=0).annotate(
+            ocupadas=Count("residentes", filter=Q(residentes__estado=Residente.Estado.ACTIVO))
+        )
+        for geriatrico in geriatrico_qs:
+            ocupadas = geriatrico.ocupadas
             if ocupadas / geriatrico.capacidad_total > .9:
                 avisos.append({"texto": f"{geriatrico.nombre}: ocupación superior al 90%", "tipo": "warning", "url": "/"})
     else:

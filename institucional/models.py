@@ -4,7 +4,7 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Sum
 from django.conf import settings
 from django.utils import timezone
@@ -234,10 +234,15 @@ class PagoParcial(models.Model):
                 raise ValidationError({"monto": "El importe no puede superar el saldo pendiente."})
 
     def save(self, *args, **kwargs):
-        self.full_clean()
-        super().save(*args, **kwargs)
-        self.pago.recalcular_estado()
-        CajaMovimiento.crear_ingreso_desde_abono(self)
+        # El abono, el estado de la cuota y el ingreso de Caja forman una sola
+        # operación financiera, incluso cuando se registra desde el Admin.
+        with transaction.atomic():
+            if self.pago_id:
+                self.pago = Pago.objects.select_for_update().get(pk=self.pago_id)
+            self.full_clean()
+            super().save(*args, **kwargs)
+            self.pago.recalcular_estado()
+            CajaMovimiento.crear_ingreso_desde_abono(self)
 
     def __str__(self):
         return f"{self.pago} · {self.monto}"
