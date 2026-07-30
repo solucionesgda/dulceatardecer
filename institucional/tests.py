@@ -9,6 +9,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
 import zipfile
+from openpyxl import load_workbook
+from .forms import EgresoCajaForm, PagoForm, PagoParcialForm
+from .moneda import formatear_moneda
+from .reportes import excel_response, pdf_response
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
 
 
@@ -523,3 +527,33 @@ class CorreccionesOperativasTest(TestCase):
         self.assertRedirects(respuesta, reverse("pago_detail", args=[pago.pk]))
         self.assertEqual(pago.estado, Pago.Estado.PAGADO)
         self.assertTrue(CajaMovimiento.objects.filter(pago=pago, tipo=CajaMovimiento.Tipo.INGRESO, importe=Decimal("1000.00")).exists())
+
+
+class FormatoMonetarioTest(TestCase):
+    def test_formato_argentino_con_miles_centavos_y_cero(self):
+        self.assertEqual(formatear_moneda(1200000), "$ 1.200.000,00")
+        self.assertEqual(formatear_moneda("85000.5"), "$ 85.000,50")
+        self.assertEqual(formatear_moneda(0), "$ 0,00")
+
+    def test_formularios_aceptan_punto_y_coma(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri moneda", codigo="GM", direccion="Calle", capacidad_total=2)
+        residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Moneda", dni="99887766", fecha_ingreso=date.today(), contacto_familiar="María Pérez")
+        pago_form = PagoForm({"residente": residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1.200.000,50", "fecha_vencimiento": date.today(), "fecha_pago": "", "medio_pago": "", "observaciones": ""})
+        self.assertTrue(pago_form.is_valid(), pago_form.errors)
+        self.assertEqual(pago_form.cleaned_data["monto"], Decimal("1200000.50"))
+        parcial_form = PagoParcialForm({"monto": "85000.5", "fecha_pago": date.today(), "medio_pago": "", "observaciones": ""})
+        self.assertTrue(parcial_form.is_valid(), parcial_form.errors)
+        categoria = CategoriaCaja.objects.create(nombre="Moneda")
+        egreso_form = EgresoCajaForm({"fecha": date.today(), "geriatrico": geriatrico.pk, "categoria": categoria.pk, "proveedor_beneficiario": "", "descripcion": "", "importe": "1.200,50", "medio_pago": "", "observaciones": ""})
+        self.assertTrue(egreso_form.is_valid(), egreso_form.errors)
+        self.assertEqual(egreso_form.cleaned_data["importe"], Decimal("1200.50"))
+
+    def test_exportaciones_pdf_y_excel_formatean_importes(self):
+        institucion = ConfiguracionInstitucional.objects.create(nombre_institucion="Dulce Atardecer")
+        excel = excel_response("prueba", ["Monto", "Concepto"], [(Decimal("1200000.50"), "Cuota")])
+        libro = load_workbook(BytesIO(excel.content))
+        self.assertEqual(libro.active["A2"].value, Decimal("1200000.50"))
+        self.assertIn("$", libro.active["A2"].number_format)
+        pdf = pdf_response("Prueba", ["Monto"], [(Decimal("1200000.50"),)], institucion, "usuario")
+        self.assertEqual(pdf["Content-Type"], "application/pdf")
+        self.assertIn("1.200.000,50".encode(), pdf.content)

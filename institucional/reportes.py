@@ -9,12 +9,18 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from .moneda import decimal_importe, es_columna_monetaria, formatear_moneda
 
 
 def excel_response(titulo, columnas, filas):
     libro = Workbook(); hoja = libro.active; hoja.title = titulo[:31]
     hoja.append(columnas)
-    for fila in filas: hoja.append([str(valor or "") for valor in fila])
+    columnas_monetarias = {indice for indice, columna in enumerate(columnas) if es_columna_monetaria(columna)}
+    for fila in filas:
+        hoja.append([decimal_importe(valor) if indice in columnas_monetarias and valor is not None else ("" if valor is None else str(valor)) for indice, valor in enumerate(fila)])
+    for fila in hoja.iter_rows(min_row=2):
+        for indice in columnas_monetarias:
+            fila[indice].number_format = '"$" #,##0.00'
     salida = BytesIO(); libro.save(salida)
     respuesta = HttpResponse(salida.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     respuesta["Content-Disposition"] = f'attachment; filename="{titulo}.xlsx"'
@@ -22,7 +28,7 @@ def excel_response(titulo, columnas, filas):
 
 
 def pdf_response(titulo, columnas, filas, institucion, usuario, textos_adicionales=(), anchos_columnas=None, tamano_fuente=7):
-    salida = BytesIO(); documento = SimpleDocTemplate(salida, pagesize=landscape(letter), leftMargin=24, rightMargin=24, topMargin=24)
+    salida = BytesIO(); documento = SimpleDocTemplate(salida, pagesize=landscape(letter), leftMargin=24, rightMargin=24, topMargin=24, pageCompression=0)
     estilos = getSampleStyleSheet(); contenido = []
     try:
         ruta_logo = institucion.logo.path if institucion.logo else None
@@ -33,7 +39,9 @@ def pdf_response(titulo, columnas, filas, institucion, usuario, textos_adicional
     contenido.extend([Paragraph(institucion.nombre_institucion, estilos["Title"]), Paragraph(titulo, estilos["Heading2"]), Paragraph(f"Emitido: {datetime.now():%d/%m/%Y %H:%M} - Usuario: {usuario}", estilos["Normal"])])
     contenido.extend(Paragraph(texto, estilos["Normal"]) for texto in textos_adicionales)
     contenido.append(Spacer(1, 12))
-    tabla = Table([columnas] + [[str(valor or "") for valor in fila] for fila in filas], repeatRows=1, colWidths=anchos_columnas)
+    columnas_monetarias = {indice for indice, columna in enumerate(columnas) if es_columna_monetaria(columna)}
+    datos = [[formatear_moneda(valor) if indice in columnas_monetarias else str(valor or "") for indice, valor in enumerate(fila)] for fila in filas]
+    tabla = Table([columnas] + datos, repeatRows=1, colWidths=anchos_columnas)
     tabla.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#243b53")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("GRID", (0,0), (-1,-1), .25, colors.grey), ("FONTSIZE", (0,0), (-1,-1), tamano_fuente), ("VALIGN", (0,0), (-1,-1), "TOP")]))
     contenido.append(tabla); documento.build(contenido)
     respuesta = HttpResponse(salida.getvalue(), content_type="application/pdf"); respuesta["Content-Disposition"] = f'attachment; filename="{titulo}.pdf"'; return respuesta

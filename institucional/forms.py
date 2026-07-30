@@ -5,6 +5,17 @@ from datetime import date
 from decimal import Decimal
 
 from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
+from .moneda import decimal_importe
+
+
+class ImporteDecimalField(forms.DecimalField):
+    def to_python(self, value):
+        if value in self.empty_values:
+            return None
+        try:
+            return decimal_importe(value)
+        except ValueError as error:
+            raise forms.ValidationError(str(error))
 
 
 class GeriatricoForm(forms.ModelForm):
@@ -26,6 +37,7 @@ class PagoForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["monto"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Monto")
         residente_id = self.data.get("residente") or self.initial.get("residente") or getattr(self.instance, "residente_id", None)
         if residente_id and not self.initial.get("monto"):
             try:
@@ -44,6 +56,10 @@ class PagoParcialForm(forms.ModelForm):
             "fecha_pago": forms.DateInput(attrs={"type": "date"}),
             "observaciones": forms.Textarea(attrs={"rows": 2}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["monto"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Monto")
 
 
 class GenerarCuotasForm(forms.Form):
@@ -98,6 +114,7 @@ class EgresoCajaForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["categoria"].queryset = CategoriaCaja.objects.filter(activa=True)
+        self.fields["importe"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Importe")
 
 
 class CategoriaCajaForm(forms.ModelForm):
