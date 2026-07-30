@@ -12,7 +12,7 @@ import zipfile
 from openpyxl import load_workbook
 from .forms import EgresoCajaForm, PagoForm, PagoParcialForm
 from .moneda import formatear_moneda
-from .reportes import excel_response, pdf_response
+from .reportes import comprobante_pago_pdf, excel_response, pdf_response
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
 
 
@@ -557,3 +557,25 @@ class FormatoMonetarioTest(TestCase):
         pdf = pdf_response("Prueba", ["Monto"], [(Decimal("1200000.50"),)], institucion, "usuario")
         self.assertEqual(pdf["Content-Type"], "application/pdf")
         self.assertIn("1.200.000,50".encode(), pdf.content)
+
+
+class ComprobantePagoTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("comprobantes", password="ClaveSegura1")
+        geriatrico = Geriatrico.objects.create(nombre="Geri comprobantes", codigo="GCMP", direccion="Calle", capacidad_total=2)
+        residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Comprobante", dni="88776655", fecha_ingreso=date.today(), contacto_familiar="María Pérez")
+        self.pago = Pago.objects.create(residente=residente, periodo="2026-08", concepto="Cuota mensual", monto=Decimal("1200000.50"), fecha_vencimiento=date.today(), fecha_pago=date.today(), medio_pago=Pago.MedioPago.TRANSFERENCIA)
+        self.institucion = ConfiguracionInstitucional.objects.create(nombre_institucion="Dulce Atardecer")
+        self.client.login(username="comprobantes", password="ClaveSegura1")
+
+    def test_descarga_y_email_reutilizan_comprobante(self):
+        respuesta = self.client.get(reverse("descargar_comprobante", args=[self.pago.pk]))
+        self.assertEqual(respuesta["Content-Type"], "application/pdf")
+        self.assertIn("comprobante-pago", respuesta["Content-Disposition"])
+        self.assertIn(b"COMPROBANTE DE PAGO", respuesta.content)
+        self.assertIn(b"1.200.000,50", respuesta.content)
+        self.assertIn(b"Datanova IT Solutions", comprobante_pago_pdf(self.pago, self.institucion, self.usuario))
+
+    def test_ficha_muestra_boton_de_descarga(self):
+        respuesta = self.client.get(reverse("pago_detail", args=[self.pago.pk]))
+        self.assertContains(respuesta, "Descargar comprobante PDF")

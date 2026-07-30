@@ -21,7 +21,7 @@ from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
 from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
-from .reportes import enviar_pdf, excel_response, pdf_response
+from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -761,7 +761,16 @@ class EnviarComprobanteView(EnvioDocumentoView):
     def asunto_predeterminado(self, objeto): return f"Comprobante de pago - {objeto.periodo}"
     def url_volver(self, objeto): return reverse("pago_detail", kwargs={"pk": objeto.pk})
     def generar_pdf(self, objeto, institucion, usuario):
-        return pdf_response("Comprobante", ["Residente", "Período", "Concepto", "Monto", "Abonado", "Saldo"], [(objeto.residente, objeto.periodo, objeto.concepto, objeto.monto, objeto.total_abonado, objeto.saldo_pendiente)], institucion, usuario).content
+        return comprobante_pago_pdf(objeto, institucion, usuario)
+
+
+class DescargarComprobanteView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        pago = get_object_or_404(Pago.objects.select_related("residente__geriatrico"), pk=pk)
+        institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        response = HttpResponse(comprobante_pago_pdf(pago, institucion, request.user), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="comprobante-pago-{pago.pk}.pdf"'
+        return response
 
 
 class EnviarEstadoCuentaView(EnvioDocumentoView):

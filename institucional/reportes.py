@@ -6,9 +6,12 @@ from django.http import HttpResponse
 from django.core.mail import EmailMessage, get_connection
 from openpyxl import Workbook
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import landscape, letter
+from reportlab.lib.pagesizes import A4, landscape, letter
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from django.conf import settings
+from django.utils.html import escape
 from .moneda import decimal_importe, es_columna_monetaria, formatear_moneda
 
 
@@ -45,6 +48,53 @@ def pdf_response(titulo, columnas, filas, institucion, usuario, textos_adicional
     tabla.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#243b53")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("GRID", (0,0), (-1,-1), .25, colors.grey), ("FONTSIZE", (0,0), (-1,-1), tamano_fuente), ("VALIGN", (0,0), (-1,-1), "TOP")]))
     contenido.append(tabla); documento.build(contenido)
     respuesta = HttpResponse(salida.getvalue(), content_type="application/pdf"); respuesta["Content-Disposition"] = f'attachment; filename="{titulo}.pdf"'; return respuesta
+
+
+def comprobante_pago_pdf(pago, institucion, usuario):
+    """Generador único usado tanto por descarga como por envío de comprobantes."""
+    salida = BytesIO()
+    documento = SimpleDocTemplate(salida, pagesize=A4, leftMargin=48, rightMargin=48, topMargin=46, bottomMargin=66, pageCompression=0)
+    estilos = getSampleStyleSheet()
+    estilos["Title"].fontName = "Helvetica-Bold"; estilos["Title"].fontSize = 20; estilos["Title"].textColor = colors.HexColor("#20242c")
+    estilos["Heading2"].textColor = colors.HexColor("#526b85")
+    estilos["Normal"].fontSize = 9; estilos["Normal"].leading = 13
+    contenido = []
+    ruta_logo = None
+    try:
+        ruta_logo = institucion.logo.path if institucion.logo else None
+    except (AttributeError, OSError, ValueError):
+        pass
+    if not ruta_logo or not Path(ruta_logo).is_file():
+        alternativa = Path(settings.BASE_DIR) / "static" / "img" / "dulce-atardecer-logo.jpg"
+        ruta_logo = alternativa if alternativa.is_file() else None
+    encabezado = []
+    if ruta_logo:
+        encabezado.append(Image(str(ruta_logo), width=54, height=54))
+    encabezado.append(Paragraph(f"<b>{escape(institucion.nombre_institucion)}</b><br/><font size=9>{escape(pago.residente.geriatrico.nombre)}</font>", estilos["Normal"]))
+    encabezado.append(Paragraph("<b>COMPROBANTE DE PAGO</b><br/><font size=8>Emitido: %s<br/>Usuario: %s</font>" % (datetime.now().strftime("%d/%m/%Y %H:%M"), escape(str(usuario))), estilos["Normal"]))
+    contenido.append(Table([encabezado], colWidths=[64, 270, 150], style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (2, 0), (2, 0), "RIGHT"), ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor("#526b85")), ("BOTTOMPADDING", (0, 0), (-1, -1), 14)]))
+    contenido.append(Spacer(1, 18))
+    ultimo_abono = pago.abonos.order_by("-fecha_pago", "-pk").first()
+    fecha_pago = pago.fecha_pago or (ultimo_abono.fecha_pago if ultimo_abono else None)
+    medio_pago = pago.medio_pago or (ultimo_abono.medio_pago if ultimo_abono else "")
+    datos = [
+        ("Residente", str(pago.residente)), ("Período", pago.periodo), ("Concepto", pago.concepto),
+        ("Fecha de pago", fecha_pago.strftime("%d/%m/%Y") if fecha_pago else "No registrada"),
+        ("Medio de pago", medio_pago or "No registrado"), ("Importe", formatear_moneda(pago.monto)),
+        ("Total abonado", formatear_moneda(pago.total_abonado)), ("Saldo pendiente", formatear_moneda(pago.saldo_pendiente)),
+    ]
+    filas = [[Paragraph(f"<b>{etiqueta}</b>", estilos["Normal"]), Paragraph(escape(valor), estilos["Normal"])] for etiqueta, valor in datos]
+    tabla = Table(filas, colWidths=[150, 334], hAlign="LEFT")
+    tabla.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f4f7")), ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6dbe2")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9)]))
+    contenido.extend([Paragraph("Detalle del comprobante", estilos["Heading2"]), Spacer(1, 6), tabla])
+
+    def pie(canvas, doc):
+        canvas.saveState(); canvas.setStrokeColor(colors.HexColor("#d6dbe2")); canvas.line(48, 43, A4[0] - 48, 43)
+        canvas.setFillColor(colors.HexColor("#687385")); canvas.setFont("Helvetica", 7); canvas.drawCentredString(A4[0] / 2, 31, "Documento generado automáticamente por")
+        canvas.setFont("Helvetica-Bold", 7); canvas.drawCentredString(A4[0] / 2, 20, "Datanova IT Solutions · www.datanovait.com"); canvas.restoreState()
+
+    documento.build(contenido, onFirstPage=pie, onLaterPages=pie)
+    return salida.getvalue()
 
 
 def validar_configuracion_smtp(institucion):
