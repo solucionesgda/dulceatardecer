@@ -131,16 +131,16 @@ def reporte_residentes_pdf(filas, institucion, usuario):
 
 
 def validar_configuracion_smtp(institucion):
-    if institucion.smtp_tls and institucion.smtp_ssl:
+    if settings.SMTP_USE_TLS and settings.SMTP_USE_SSL:
         raise ValueError("La configuración SMTP no puede usar TLS y SSL al mismo tiempo.")
-    if not all((institucion.smtp_servidor, institucion.smtp_puerto, institucion.smtp_usuario, institucion.smtp_contrasena)):
+    if not all((settings.SMTP_HOST, settings.SMTP_PORT, settings.SMTP_USERNAME, settings.SMTP_PASSWORD)):
         raise ValueError("La configuración SMTP está incompleta.")
 
 
 def enviar_pdf(institucion, destinatario, asunto, pdf, nombre, mensaje_texto="Adjuntamos el documento solicitado."):
     validar_configuracion_smtp(institucion)
-    conexion = get_connection(host=institucion.smtp_servidor, port=institucion.smtp_puerto, username=institucion.smtp_usuario, password=institucion.smtp_contrasena, use_tls=institucion.smtp_tls, use_ssl=institucion.smtp_ssl)
-    remitente = institucion.smtp_remitente or institucion.smtp_usuario
-    if institucion.smtp_nombre_remitente: remitente = f"{institucion.smtp_nombre_remitente} <{remitente}>"
+    conexion = get_connection(host=settings.SMTP_HOST, port=settings.SMTP_PORT, username=settings.SMTP_USERNAME, password=settings.SMTP_PASSWORD, use_tls=settings.SMTP_USE_TLS, use_ssl=settings.SMTP_USE_SSL)
+    remitente = settings.SMTP_FROM_EMAIL or settings.SMTP_USERNAME
+    if settings.SMTP_FROM_NAME: remitente = f"{settings.SMTP_FROM_NAME} <{remitente}>"
     mensaje = EmailMessage(asunto, mensaje_texto, remitente, [destinatario], connection=conexion)
     mensaje.attach(nombre, pdf, "application/pdf"); mensaje.send(fail_silently=False)

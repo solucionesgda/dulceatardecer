@@ -126,21 +126,7 @@ class CategoriaCajaForm(forms.ModelForm):
 class ConfiguracionInstitucionalForm(forms.ModelForm):
     class Meta:
         model = ConfiguracionInstitucional
-        fields = ("nombre_institucion", "direccion", "telefono", "email", "cuit", "logo", "dia_vencimiento_defecto", "concepto_cuota_defecto", "moneda", "smtp_servidor", "smtp_puerto", "smtp_usuario", "smtp_contrasena", "smtp_tls", "smtp_ssl", "smtp_remitente", "smtp_nombre_remitente")
-        widgets = {"smtp_contrasena": forms.PasswordInput()}
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance and self.instance.smtp_contrasena:
-            self.fields["smtp_contrasena"].help_text = "Deje este campo vacío para conservar la contraseña actual."
-
-    def clean(self):
-        cleaned_data = super().clean()
-        if cleaned_data.get("smtp_tls") and cleaned_data.get("smtp_ssl"):
-            self.add_error("smtp_ssl", "TLS y SSL no pueden estar activos simultáneamente.")
-        if not cleaned_data.get("smtp_contrasena") and self.instance and self.instance.pk:
-            cleaned_data["smtp_contrasena"] = self.instance.smtp_contrasena
-        return cleaned_data
+        fields = ("nombre_institucion", "direccion", "telefono", "email", "cuit", "logo", "dia_vencimiento_defecto", "concepto_cuota_defecto", "moneda")
 
 
 class EnvioEmailForm(forms.Form):

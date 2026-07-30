@@ -10,7 +10,7 @@ from decimal import Decimal
 from io import BytesIO
 import zipfile
 from openpyxl import load_workbook
-from .forms import EgresoCajaForm, PagoForm, PagoParcialForm
+from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoForm, PagoParcialForm
 from .moneda import formatear_moneda
 from .reportes import comprobante_pago_pdf, excel_response, pdf_response
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
@@ -19,7 +19,7 @@ from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, 
 class AccesoTest(TestCase):
     def setUp(self):
         self.usuario = User.objects.create_user("consulta", password="clave-segura")
-        grupo = Group.objects.create(name="Consulta")
+        grupo, _ = Group.objects.get_or_create(name="Secretaría")
         permiso = Permission.objects.get(codename="view_geriatrico")
         grupo.permissions.add(permiso)
         self.usuario.groups.add(grupo)
@@ -204,7 +204,7 @@ class AccesoTest(TestCase):
             self.assertEqual(response["Content-Type"], contenido)
 
     def configurar_smtp(self):
-        return ConfiguracionInstitucional.objects.create(nombre_institucion="Dulce Atardecer", smtp_servidor="smtp.example.test", smtp_puerto=587, smtp_usuario="usuario", smtp_contrasena="secreto", smtp_tls=True, smtp_remitente="noreply@example.test")
+        return ConfiguracionInstitucional.objects.create(nombre_institucion="Dulce Atardecer")
 
     def crear_pago_con_email(self):
         geriatrico = Geriatrico.objects.create(nombre="Geri email", codigo="GE", direccion="Calle 1", capacidad_total=3)
@@ -219,7 +219,7 @@ class AccesoTest(TestCase):
         self.assertContains(self.client.get(reverse("enviar_comprobante", args=[pago.pk])), "contacto@example.test")
         self.assertContains(self.client.get(reverse("enviar_estado_cuenta", args=[residente.pk])), "contacto@example.test")
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", SMTP_HOST="smtp.example.test", SMTP_PORT=587, SMTP_USERNAME="usuario", SMTP_PASSWORD="secreto", SMTP_USE_TLS=True, SMTP_USE_SSL=False, SMTP_FROM_EMAIL="noreply@example.test", SMTP_FROM_NAME="Dulce Atardecer")
     def test_envio_comprobante_adjunta_pdf_y_registra_historial(self):
         self.configurar_smtp(); _, pago = self.crear_pago_con_email(); self.client.login(username="consulta", password="clave-segura")
         response = self.client.post(reverse("enviar_comprobante", args=[pago.pk]), {"destinatario": "destino@example.test", "asunto": "Comprobante", "mensaje": "Adjunto"})
@@ -229,7 +229,7 @@ class AccesoTest(TestCase):
         self.assertEqual(mail.outbox[0].attachments[0][0], "comprobante.pdf")
         self.assertTrue(HistorialEnvioEmail.objects.filter(documento="Comprobante", resultado="Enviado").exists())
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", SMTP_HOST="smtp.example.test", SMTP_PORT=587, SMTP_USERNAME="usuario", SMTP_PASSWORD="secreto", SMTP_USE_TLS=True, SMTP_USE_SSL=False, SMTP_FROM_EMAIL="noreply@example.test", SMTP_FROM_NAME="Dulce Atardecer")
     def test_envio_estado_cuenta_registra_historial(self):
         self.configurar_smtp(); residente, _ = self.crear_pago_con_email(); self.client.login(username="consulta", password="clave-segura")
         response = self.client.post(reverse("enviar_estado_cuenta", args=[residente.pk]), {"destinatario": "destino@example.test", "asunto": "Estado", "mensaje": "Adjunto"})
@@ -243,6 +243,29 @@ class AccesoTest(TestCase):
         historial = HistorialEnvioEmail.objects.get(documento="Comprobante")
         self.assertEqual(historial.resultado, "Error")
         self.assertIn("incompleta", historial.error)
+
+
+class SeguridadRolesYSMTPTest(TestCase):
+    def setUp(self):
+        self.consulta = User.objects.create_user("solo-consulta", password="ClaveSegura1")
+        self.consulta.groups.add(Group.objects.get_or_create(name="Consulta")[0])
+        self.secretaria = User.objects.create_user("secretaria", password="ClaveSegura1")
+        self.secretaria.groups.add(Group.objects.get_or_create(name="Secretaría")[0])
+
+    def test_consulta_no_accede_a_gestion_por_url_ni_post(self):
+        self.client.login(username="solo-consulta", password="ClaveSegura1")
+        self.assertEqual(self.client.get(reverse("pago_create")).status_code, 403)
+        self.assertEqual(self.client.post(reverse("generar_cuotas"), {}).status_code, 403)
+        self.assertEqual(self.client.get(reverse("configuracion")).status_code, 403)
+
+    def test_secretaria_no_accede_a_configuracion(self):
+        self.client.login(username="secretaria", password="ClaveSegura1")
+        self.assertEqual(self.client.get(reverse("configuracion")).status_code, 403)
+
+    def test_smtp_no_persiste_campos_ni_aparece_en_formulario(self):
+        campos = {campo.name for campo in ConfiguracionInstitucional._meta.get_fields()}
+        self.assertFalse({"smtp_servidor", "smtp_puerto", "smtp_usuario", "smtp_contrasena", "smtp_tls", "smtp_ssl", "smtp_remitente", "smtp_nombre_remitente"} & campos)
+        self.assertNotIn("smtp_contrasena", ConfiguracionInstitucionalForm().fields)
 
 
 class TareasTest(TestCase):
@@ -498,6 +521,7 @@ class MisTurnosTest(TestCase):
 class CorreccionesOperativasTest(TestCase):
     def setUp(self):
         self.usuario = User.objects.create_user("operador", password="ClaveSegura1")
+        self.usuario.groups.add(Group.objects.get_or_create(name="Secretaría")[0])
         self.geriatrico = Geriatrico.objects.create(nombre="Geri web", codigo="GW", direccion="Calle 1", capacidad_total=5)
         self.residente = Residente.objects.create(geriatrico=self.geriatrico, nombre="Ana", apellido="Web", dni="11223344", fecha_ingreso=date.today(), contacto_familiar="María Pérez", monto_mensual=Decimal("1000.00"))
         self.client.login(username="operador", password="ClaveSegura1")
@@ -562,6 +586,7 @@ class FormatoMonetarioTest(TestCase):
 class ComprobantePagoTest(TestCase):
     def setUp(self):
         self.usuario = User.objects.create_user("comprobantes", password="ClaveSegura1")
+        self.usuario.groups.add(Group.objects.get_or_create(name="Secretaría")[0])
         geriatrico = Geriatrico.objects.create(nombre="Geri comprobantes", codigo="GCMP", direccion="Calle", capacidad_total=2)
         residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Comprobante", dni="88776655", fecha_ingreso=date.today(), contacto_familiar="María Pérez")
         self.pago = Pago.objects.create(residente=residente, periodo="2026-08", concepto="Cuota mensual", monto=Decimal("1200000.50"), fecha_vencimiento=date.today(), fecha_pago=date.today(), medio_pago=Pago.MedioPago.TRANSFERENCIA)
@@ -584,6 +609,7 @@ class ComprobantePagoTest(TestCase):
 class ReporteResidentesPdfTest(TestCase):
     def test_reporte_residentes_incluye_columnas_total_y_pie(self):
         usuario = User.objects.create_user("reporte-residentes", password="ClaveSegura1")
+        usuario.groups.add(Group.objects.get_or_create(name="Consulta")[0])
         geriatrico = Geriatrico.objects.create(nombre="Geri reporte", codigo="GRP", direccion="Calle", capacidad_total=2)
         Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Reporte", dni="44556677", fecha_ingreso=date.today(), contacto_familiar="María Pérez", obra_social=Residente.ObraSocial.PAMI, numero_afiliado="12345")
         ConfiguracionInstitucional.objects.create(nombre_institucion="Dulce Atardecer")
