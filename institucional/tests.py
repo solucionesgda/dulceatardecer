@@ -579,3 +579,16 @@ class ComprobantePagoTest(TestCase):
     def test_ficha_muestra_boton_de_descarga(self):
         respuesta = self.client.get(reverse("pago_detail", args=[self.pago.pk]))
         self.assertContains(respuesta, "Descargar comprobante PDF")
+
+
+class ReporteResidentesPdfTest(TestCase):
+    def test_reporte_residentes_incluye_columnas_total_y_pie(self):
+        usuario = User.objects.create_user("reporte-residentes", password="ClaveSegura1")
+        geriatrico = Geriatrico.objects.create(nombre="Geri reporte", codigo="GRP", direccion="Calle", capacidad_total=2)
+        Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Reporte", dni="44556677", fecha_ingreso=date.today(), contacto_familiar="María Pérez", obra_social=Residente.ObraSocial.PAMI, numero_afiliado="12345")
+        ConfiguracionInstitucional.objects.create(nombre_institucion="Dulce Atardecer")
+        self.client.login(username="reporte-residentes", password="ClaveSegura1")
+        respuesta = self.client.get(reverse("residente_exportar", args=["pdf"]))
+        self.assertEqual(respuesta["Content-Type"], "application/pdf")
+        for texto in (b"REPORTE DE RESIDENTES", b"Total de residentes", b"afiliado", b"Datanova IT Solutions", b"Reporte, Ana"):
+            self.assertIn(texto, respuesta.content)

@@ -21,7 +21,7 @@ from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
 from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
-from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response
+from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response, reporte_residentes_pdf
 
 
 class InicioView(LoginRequiredMixin, TemplateView):
@@ -532,10 +532,14 @@ class ResidenteListView(LoginRequiredMixin, ListView):
 
 class ExportarResidentesView(ResidenteListView):
     def get(self, request, formato):
-        filas = [(r.apellido + ", " + r.nombre, r.dni, r.geriatrico.nombre, r.habitacion, r.estado, r.obra_social) for r in self.get_queryset()]
-        columnas = ["Apellido y nombre", "DNI", "Geriátrico", "Habitación", "Estado", "Obra social"]
+        filas = [(r.apellido + ", " + r.nombre, r.dni, r.geriatrico.nombre, r.habitacion, r.estado, r.obra_social_otra if r.obra_social == Residente.ObraSocial.OTRA else r.obra_social, r.numero_afiliado) for r in self.get_queryset()]
+        columnas = ["Apellido y nombre", "DNI", "Geriátrico", "Habitación", "Estado", "Obra social", "Número de afiliado"]
         institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
-        return excel_response("residentes", columnas, filas) if formato == "excel" else pdf_response("Reporte de residentes", columnas, filas, institucion, request.user)
+        if formato == "excel":
+            return excel_response("residentes", columnas, filas)
+        response = HttpResponse(reporte_residentes_pdf(filas, institucion, request.user), content_type="application/pdf")
+        response["Content-Disposition"] = 'attachment; filename="reporte-residentes.pdf"'
+        return response
 
 
 class ResidenteCreateView(LoginRequiredMixin, CreateView):

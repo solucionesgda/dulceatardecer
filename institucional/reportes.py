@@ -9,10 +9,40 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape, letter
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from django.conf import settings
 from django.utils.html import escape
 from .moneda import decimal_importe, es_columna_monetaria, formatear_moneda
+
+
+def ruta_logo_institucional(institucion):
+    """Obtiene el archivo del logo sin depender de una URL web."""
+    try:
+        ruta = institucion.logo.path if institucion.logo else None
+        if ruta and Path(ruta).is_file():
+            return Path(ruta)
+    except (AttributeError, OSError, ValueError):
+        pass
+    alternativa = Path(settings.BASE_DIR) / "static" / "img" / "dulce-atardecer-logo.jpg"
+    return alternativa if alternativa.is_file() else None
+
+
+def logo_institucional(institucion, max_ancho=54, max_alto=54):
+    ruta = ruta_logo_institucional(institucion)
+    if not ruta:
+        return None
+    ancho, alto = ImageReader(str(ruta)).getSize()
+    escala = min(max_ancho / ancho, max_alto / alto)
+    return Image(str(ruta), width=ancho * escala, height=alto * escala)
+
+
+def pie_datanova(canvas, doc):
+    ancho, _ = doc.pagesize
+    canvas.saveState(); canvas.setStrokeColor(colors.HexColor("#d6dbe2")); canvas.line(doc.leftMargin, 36, ancho - doc.rightMargin, 36)
+    canvas.setFillColor(colors.HexColor("#687385")); canvas.setFont("Helvetica", 7); canvas.drawCentredString(ancho / 2, 25, "Documento generado automáticamente por")
+    canvas.setFont("Helvetica-Bold", 7); canvas.drawCentredString(ancho / 2, 14, "Datanova IT Solutions · www.datanovait.com")
+    canvas.setFont("Helvetica", 7); canvas.drawRightString(ancho - doc.rightMargin, 25, f"Página {canvas.getPageNumber()}"); canvas.restoreState()
 
 
 def excel_response(titulo, columnas, filas):
@@ -33,12 +63,9 @@ def excel_response(titulo, columnas, filas):
 def pdf_response(titulo, columnas, filas, institucion, usuario, textos_adicionales=(), anchos_columnas=None, tamano_fuente=7):
     salida = BytesIO(); documento = SimpleDocTemplate(salida, pagesize=landscape(letter), leftMargin=24, rightMargin=24, topMargin=24, pageCompression=0)
     estilos = getSampleStyleSheet(); contenido = []
-    try:
-        ruta_logo = institucion.logo.path if institucion.logo else None
-        if ruta_logo and Path(ruta_logo).is_file():
-            contenido.extend([Image(ruta_logo, width=55, height=55), Spacer(1, 6)])
-    except (AttributeError, OSError, ValueError):
-        pass
+    logo = logo_institucional(institucion)
+    if logo:
+        contenido.extend([logo, Spacer(1, 6)])
     contenido.extend([Paragraph(institucion.nombre_institucion, estilos["Title"]), Paragraph(titulo, estilos["Heading2"]), Paragraph(f"Emitido: {datetime.now():%d/%m/%Y %H:%M} - Usuario: {usuario}", estilos["Normal"])])
     contenido.extend(Paragraph(texto, estilos["Normal"]) for texto in textos_adicionales)
     contenido.append(Spacer(1, 12))
@@ -59,17 +86,9 @@ def comprobante_pago_pdf(pago, institucion, usuario):
     estilos["Heading2"].textColor = colors.HexColor("#526b85")
     estilos["Normal"].fontSize = 9; estilos["Normal"].leading = 13
     contenido = []
-    ruta_logo = None
-    try:
-        ruta_logo = institucion.logo.path if institucion.logo else None
-    except (AttributeError, OSError, ValueError):
-        pass
-    if not ruta_logo or not Path(ruta_logo).is_file():
-        alternativa = Path(settings.BASE_DIR) / "static" / "img" / "dulce-atardecer-logo.jpg"
-        ruta_logo = alternativa if alternativa.is_file() else None
     encabezado = []
-    if ruta_logo:
-        encabezado.append(Image(str(ruta_logo), width=54, height=54))
+    logo = logo_institucional(institucion)
+    encabezado.append(logo or Spacer(54, 54))
     encabezado.append(Paragraph(f"<b>{escape(institucion.nombre_institucion)}</b><br/><font size=9>{escape(pago.residente.geriatrico.nombre)}</font>", estilos["Normal"]))
     encabezado.append(Paragraph("<b>COMPROBANTE DE PAGO</b><br/><font size=8>Emitido: %s<br/>Usuario: %s</font>" % (datetime.now().strftime("%d/%m/%Y %H:%M"), escape(str(usuario))), estilos["Normal"]))
     contenido.append(Table([encabezado], colWidths=[64, 270, 150], style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (2, 0), (2, 0), "RIGHT"), ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor("#526b85")), ("BOTTOMPADDING", (0, 0), (-1, -1), 14)]))
@@ -88,12 +107,26 @@ def comprobante_pago_pdf(pago, institucion, usuario):
     tabla.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f4f7")), ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6dbe2")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9)]))
     contenido.extend([Paragraph("Detalle del comprobante", estilos["Heading2"]), Spacer(1, 6), tabla])
 
-    def pie(canvas, doc):
-        canvas.saveState(); canvas.setStrokeColor(colors.HexColor("#d6dbe2")); canvas.line(48, 43, A4[0] - 48, 43)
-        canvas.setFillColor(colors.HexColor("#687385")); canvas.setFont("Helvetica", 7); canvas.drawCentredString(A4[0] / 2, 31, "Documento generado automáticamente por")
-        canvas.setFont("Helvetica-Bold", 7); canvas.drawCentredString(A4[0] / 2, 20, "Datanova IT Solutions · www.datanovait.com"); canvas.restoreState()
+    documento.build(contenido, onFirstPage=pie_datanova, onLaterPages=pie_datanova)
+    return salida.getvalue()
 
-    documento.build(contenido, onFirstPage=pie, onLaterPages=pie)
+
+def reporte_residentes_pdf(filas, institucion, usuario):
+    salida = BytesIO()
+    documento = SimpleDocTemplate(salida, pagesize=landscape(A4), leftMargin=28, rightMargin=28, topMargin=34, bottomMargin=58, pageCompression=0)
+    estilos = getSampleStyleSheet(); estilos["Normal"].fontSize = 8; estilos["Normal"].leading = 10
+    encabezado = []
+    logo = logo_institucional(institucion, 48, 48)
+    encabezado.append(logo or Spacer(48, 48))
+    encabezado.append(Paragraph(f"<b>{escape(institucion.nombre_institucion)}</b><br/><font size=9>Reporte institucional</font>", estilos["Normal"]))
+    encabezado.append(Paragraph(f"<b>REPORTE DE RESIDENTES</b><br/><font size=8>Emitido: {datetime.now():%d/%m/%Y %H:%M}<br/>Usuario: {escape(str(usuario))}</font>", estilos["Normal"]))
+    contenido = [Table([encabezado], colWidths=[58, 430, 270], style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (2, 0), (2, 0), "RIGHT"), ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor("#526b85")), ("BOTTOMPADDING", (0, 0), (-1, -1), 12)]), Spacer(1, 12), Paragraph(f"<b>Total de residentes:</b> {len(filas)}", estilos["Normal"]), Spacer(1, 8)]
+    columnas = ["Apellido y nombre", "DNI", "Geriátrico", "Habitación", "Estado", "Obra social", "N.º afiliado"]
+    datos = [columnas] + [[Paragraph(escape(str(valor or "—")), estilos["Normal"]) for valor in fila] for fila in filas]
+    tabla = Table(datos, repeatRows=1, colWidths=[145, 78, 132, 68, 75, 135, 105])
+    tabla.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#526b85")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#d6dbe2")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")])]))
+    contenido.append(tabla)
+    documento.build(contenido, onFirstPage=pie_datanova, onLaterPages=pie_datanova)
     return salida.getvalue()
 
 
