@@ -81,7 +81,7 @@ class Residente(models.Model):
     obra_social = models.CharField(max_length=100, blank=True, choices=ObraSocial.choices)
     obra_social_otra = models.CharField(max_length=100, blank=True)
     numero_afiliado = models.CharField(max_length=100, blank=True, validators=[RegexValidator(r"^\d+$", "El número de afiliado debe contener solo números.")])
-    contacto_familiar = models.CharField(max_length=150, validators=[RegexValidator(r"^\d+$", "Ingrese únicamente números.")])
+    contacto_familiar = models.CharField(max_length=150, validators=[RegexValidator(r"^[A-Za-zÁÉÍÓÚáéíóúÑñÜü' -]+$", "Ingrese nombre y apellido, sin números ni símbolos.")])
     email_contacto = models.EmailField(blank=True)
     telefono = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r"^\d+$", "El teléfono solo puede contener números.")])
     medico_tratante = models.CharField(max_length=150, blank=True)

@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
+from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ConfiguracionView, EgresoCajaCreateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagoCreateView, PagoDetailView, PagoListView, PagoUpdateView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteCreateView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
     path("service-worker.js", ServiceWorkerView.as_view(), name="service_worker"),
@@ -13,6 +13,7 @@ urlpatterns = [
     path("acerca-del-sistema/", AcercaSistemaView.as_view(), name="acerca_sistema"),
     path("", InicioView.as_view(), name="inicio"),
     path("residentes/", ResidenteListView.as_view(), name="residente_list"),
+    path("residentes/nuevo/", ResidenteCreateView.as_view(), name="residente_create"),
     path("residentes/exportar/<str:formato>/", ExportarResidentesView.as_view(), name="residente_exportar"),
     path("residentes/<int:pk>/", ResidenteDetailView.as_view(), name="residente_detail"),
     path("pagos/", PagoListView.as_view(), name="pago_list"),

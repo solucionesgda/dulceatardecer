@@ -19,7 +19,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm
+from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import enviar_pdf, excel_response, pdf_response
 
@@ -538,6 +538,17 @@ class ExportarResidentesView(ResidenteListView):
         return excel_response("residentes", columnas, filas) if formato == "excel" else pdf_response("Reporte de residentes", columnas, filas, institucion, request.user)
 
 
+class ResidenteCreateView(LoginRequiredMixin, CreateView):
+    model = Residente
+    form_class = ResidenteForm
+    template_name = "institucional/residente_form.html"
+    success_url = reverse_lazy("residente_list")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Residente registrado correctamente.")
+        return super().form_valid(form)
+
+
 class ResidenteDetailView(LoginRequiredMixin, DetailView):
     model = Residente
     template_name = "institucional/residente_detail.html"
@@ -614,6 +625,16 @@ class PagoCreateView(LoginRequiredMixin, CreateView):
     def get_success_url(self):
         return reverse("pago_detail", kwargs={"pk": self.object.pk})
 
+    def form_valid(self, form):
+        try:
+            with transaction.atomic():
+                response = super().form_valid(form)
+        except (ValidationError, IntegrityError):
+            form.add_error(None, "No se pudo registrar el pago. Revisá los datos e intentá nuevamente.")
+            return self.form_invalid(form)
+        messages.success(self.request, "Pago registrado correctamente.")
+        return response
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["montos_residentes"] = {
@@ -650,9 +671,11 @@ class PagoDetailView(LoginRequiredMixin, DetailView):
             abono.pago = self.object
             abono.usuario = request.user
             try:
-                abono.save()
-            except ValidationError as error:
-                form.add_error("monto", error.message_dict.get("monto", ["No se pudo registrar el abono."])[0])
+                with transaction.atomic():
+                    abono.save()
+            except (ValidationError, IntegrityError) as error:
+                detalle = getattr(error, "message_dict", {}).get("monto", ["No se pudo registrar el abono."])[0]
+                form.add_error("monto", detalle)
             else:
                 messages.success(request, "Abono registrado correctamente.")
                 return redirect("pago_detail", pk=self.object.pk)

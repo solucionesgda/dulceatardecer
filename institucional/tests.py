@@ -372,9 +372,14 @@ class GeriatricoTest(TestCase):
         with self.assertRaises(ValidationError):
             residente.full_clean()
 
-    def test_contacto_familiar_solo_admite_numeros(self):
+    def test_contacto_familiar_admite_nombre_y_apellido(self):
         geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
-        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="1", fecha_ingreso="2026-01-01", contacto_familiar="Contacto")
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="María Pérez")
+        residente.full_clean()
+
+    def test_contacto_familiar_rechaza_numeros(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri contacto", codigo="GC", direccion="Calle 1", capacidad_total=2)
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567")
         with self.assertRaises(ValidationError):
             residente.full_clean()
 
@@ -399,7 +404,7 @@ class GeriatricoTest(TestCase):
 
     def test_limpia_obra_social_otra_si_selecciona_otra_cobertura(self):
         geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=2)
-        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="3411234567", obra_social=Residente.ObraSocial.PAMI, obra_social_otra="Cobertura anterior")
+        residente = Residente(geriatrico=geriatrico, nombre="Ana", apellido="Pérez", dni="12345678", fecha_ingreso="2026-01-01", contacto_familiar="María Pérez", obra_social=Residente.ObraSocial.PAMI, obra_social_otra="Cobertura anterior")
         residente.full_clean()
         self.assertEqual(residente.obra_social_otra, "")
 
@@ -484,3 +489,37 @@ class MisTurnosTest(TestCase):
         respuesta = self.client.get(reverse("tarea_list"))
         self.assertContains(respuesta, "Hoy trabajás")
         self.assertContains(respuesta, "07:00 a 15:00")
+
+
+class CorreccionesOperativasTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("operador", password="ClaveSegura1")
+        self.geriatrico = Geriatrico.objects.create(nombre="Geri web", codigo="GW", direccion="Calle 1", capacidad_total=5)
+        self.residente = Residente.objects.create(geriatrico=self.geriatrico, nombre="Ana", apellido="Web", dni="11223344", fecha_ingreso=date.today(), contacto_familiar="María Pérez", monto_mensual=Decimal("1000.00"))
+        self.client.login(username="operador", password="ClaveSegura1")
+
+    def test_listado_residentes_muestra_acciones_y_afiliado(self):
+        self.residente.numero_afiliado = "12345"; self.residente.save()
+        respuesta = self.client.get(reverse("residente_list"))
+        self.assertContains(respuesta, "Nuevo residente")
+        self.assertContains(respuesta, "Exportar Excel")
+        self.assertContains(respuesta, "Exportar PDF")
+        self.assertContains(respuesta, "12345")
+
+    def test_alta_residente_desde_web(self):
+        datos = {"geriatrico": self.geriatrico.pk, "nombre": "Luis", "apellido": "Nuevo", "dni": "55667788", "fecha_ingreso": date.today(), "contacto_familiar": "Juan Gómez", "estado": Residente.Estado.ACTIVO, "movilidad": Residente.Movilidad.INDEPENDIENTE}
+        respuesta = self.client.post(reverse("residente_create"), datos)
+        self.assertRedirects(respuesta, reverse("residente_list"))
+        self.assertTrue(Residente.objects.filter(dni="55667788").exists())
+
+    def test_cuotas_rechazan_vencimiento_pasado(self):
+        respuesta = self.client.post(reverse("generar_cuotas"), {"periodo": "2026-08", "fecha_vencimiento": date.today() - timedelta(days=1), "geriatrico": self.geriatrico.pk})
+        self.assertContains(respuesta, "no puede ser anterior a la fecha actual")
+        self.assertFalse(Pago.objects.filter(residente=self.residente, periodo="2026-08").exists())
+
+    def test_registrar_pago_completo_crea_abono_y_movimiento(self):
+        respuesta = self.client.post(reverse("pago_create"), {"residente": self.residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1000.00", "fecha_vencimiento": date.today(), "fecha_pago": date.today(), "medio_pago": Pago.MedioPago.EFECTIVO, "observaciones": "Pago web"})
+        pago = Pago.objects.get(residente=self.residente, periodo="2026-08")
+        self.assertRedirects(respuesta, reverse("pago_detail", args=[pago.pk]))
+        self.assertEqual(pago.estado, Pago.Estado.PAGADO)
+        self.assertTrue(CajaMovimiento.objects.filter(pago=pago, tipo=CajaMovimiento.Tipo.INGRESO, importe=Decimal("1000.00")).exists())

@@ -17,9 +17,10 @@ class GeriatricoForm(forms.ModelForm):
 class PagoForm(forms.ModelForm):
     class Meta:
         model = Pago
-        fields = ("residente", "periodo", "concepto", "monto", "fecha_vencimiento", "medio_pago", "observaciones")
+        fields = ("residente", "periodo", "concepto", "monto", "fecha_vencimiento", "fecha_pago", "medio_pago", "observaciones")
         widgets = {
             "fecha_vencimiento": forms.DateInput(attrs={"type": "date"}),
+            "fecha_pago": forms.DateInput(attrs={"type": "date"}),
             "observaciones": forms.Textarea(attrs={"rows": 3}),
         }
 
@@ -56,6 +57,12 @@ class GenerarCuotasForm(forms.Form):
         if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", periodo):
             raise forms.ValidationError("El período debe tener el formato AAAA-MM.")
         return periodo
+
+    def clean_fecha_vencimiento(self):
+        fecha_vencimiento = self.cleaned_data["fecha_vencimiento"]
+        if fecha_vencimiento < date.today():
+            raise forms.ValidationError("La fecha de vencimiento no puede ser anterior a la fecha actual.")
+        return fecha_vencimiento
 
 
 class AjusteMontoForm(forms.Form):
@@ -174,6 +181,21 @@ class PersonalForm(forms.ModelForm):
         model = Personal
         fields = ("nombre_completo", "dni", "cargo", "turno_habitual", "telefono", "cuil", "inicio_contrato", "estado", "observaciones")
         widgets = {"inicio_contrato": forms.DateInput(attrs={"type": "date"}), "observaciones": forms.Textarea(attrs={"rows": 3})}
+
+
+class ResidenteForm(forms.ModelForm):
+    class Meta:
+        model = Residente
+        fields = ("geriatrico", "nombre", "apellido", "dni", "fecha_nacimiento", "fecha_ingreso", "habitacion", "obra_social", "obra_social_otra", "numero_afiliado", "contacto_familiar", "email_contacto", "telefono", "medico_tratante", "diagnostico_principal", "movilidad", "observaciones", "estado", "monto_mensual")
+        widgets = {
+            "fecha_nacimiento": forms.DateInput(attrs={"type": "date"}),
+            "fecha_ingreso": forms.DateInput(attrs={"type": "date"}),
+            "diagnostico_principal": forms.Textarea(attrs={"rows": 3}),
+            "observaciones": forms.Textarea(attrs={"rows": 3}),
+            "email_contacto": forms.EmailInput(attrs={"placeholder": "ejemplo@correo.com"}),
+            "telefono": forms.TextInput(attrs={"placeholder": "3415123456"}),
+            "contacto_familiar": forms.TextInput(attrs={"placeholder": "Nombre y apellido"}),
+        }
 
 
 class PerfilUsuarioForm(UserChangeForm):
