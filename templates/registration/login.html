@@ -10,5 +10,16 @@
     <button class="btn btn-primary w-100">Ingresar al sistema</button>
   </form>
   <p class="login-note">Dulce Atardecer · Cuidamos cada detalle</p>
+  <div class="login-credit">
+    <span></span>
+    <p>Sistema creado por <strong>Datanova IT Solutions</strong><br><a href="https://www.datanovait.com" target="_blank" rel="noopener">www.datanovait.com</a></p>
+  </div>
 </div></div>
+<style>
+  .login-credit{margin-top:1rem;text-align:center;color:var(--muted);font-size:.72rem;line-height:1.55}
+  .login-credit>span{display:block;border-top:1px solid var(--border);margin:0 auto .85rem;width:72%}
+  .login-credit p{margin:0}.login-credit strong{font-weight:700}
+  .login-credit a{color:var(--muted);text-decoration:none}.login-credit a:hover{color:var(--primary);text-decoration:underline}
+  @media(max-width:575px){.login-credit{font-size:.7rem}.login-credit>span{width:82%}}
+</style>
 {% endblock %}

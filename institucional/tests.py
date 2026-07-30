@@ -491,6 +491,9 @@ class PwaTest(TestCase):
         self.assertContains(respuesta, "manifest.webmanifest")
         self.assertContains(respuesta, "apple-mobile-web-app-capable")
         self.assertContains(respuesta, "Añadir a pantalla de inicio")
+        self.assertContains(respuesta, "Sistema creado por")
+        self.assertContains(respuesta, "<strong>Datanova IT Solutions</strong>", html=False)
+        self.assertContains(respuesta, "https://www.datanovait.com")
 
 
 class MisTurnosTest(TestCase):
