@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from datetime import date
 from decimal import Decimal
 
-from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
+from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .moneda import decimal_importe
 
 
@@ -23,46 +23,6 @@ class GeriatricoForm(forms.ModelForm):
         model = Geriatrico
         fields = ("nombre", "codigo", "direccion", "capacidad_total", "activo", "observaciones")
         widgets = {"observaciones": forms.Textarea(attrs={"rows": 4})}
-
-
-class PagoForm(forms.ModelForm):
-    geriatrico = forms.ModelChoiceField(queryset=Geriatrico.objects.filter(activo=True), label="Geriátrico")
-    class Meta:
-        model = Pago
-        fields = ("residente", "periodo", "concepto", "monto", "fecha_vencimiento", "fecha_pago", "medio_pago", "observaciones")
-        widgets = {
-            "fecha_vencimiento": forms.DateInput(attrs={"type": "date"}),
-            "fecha_pago": forms.DateInput(attrs={"type": "date"}),
-            "observaciones": forms.Textarea(attrs={"rows": 3}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["monto"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Monto")
-        geriatrico_id = self.data.get("geriatrico") or self.initial.get("geriatrico") or getattr(getattr(self.instance, "residente", None), "geriatrico_id", None)
-        if geriatrico_id:
-            self.fields["geriatrico"].initial = geriatrico_id
-            self.fields["residente"].queryset = Residente.objects.filter(geriatrico_id=geriatrico_id, estado=Residente.Estado.ACTIVO)
-        else:
-            self.fields["residente"].queryset = Residente.objects.none()
-        residente_id = self.data.get("residente") or self.initial.get("residente") or getattr(self.instance, "residente_id", None)
-        if residente_id and not self.initial.get("monto"):
-            try:
-                monto = Residente.objects.only("monto_mensual").get(pk=residente_id).monto_mensual
-                if monto:
-                    self.initial["monto"] = monto
-            except Residente.DoesNotExist:
-                pass
-
-    def clean(self):
-        cleaned_data = super().clean()
-        residente = cleaned_data.get("residente")
-        geriatrico = cleaned_data.get("geriatrico")
-        if residente and geriatrico and residente.geriatrico_id != geriatrico.pk:
-            self.add_error("residente", "Seleccioná un residente activo del geriátrico indicado.")
-        if cleaned_data.get("fecha_pago") and cleaned_data["fecha_pago"] > date.today():
-            self.add_error("fecha_pago", "La fecha de pago no puede ser posterior al día de hoy.")
-        return cleaned_data
 
 
 class PagoParcialForm(forms.ModelForm):

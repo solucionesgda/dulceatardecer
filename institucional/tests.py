@@ -10,7 +10,7 @@ from decimal import Decimal
 from io import BytesIO
 import zipfile
 from openpyxl import load_workbook
-from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoForm, PagoParcialForm, ResidenteForm
+from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoParcialForm, ResidenteForm
 from .moneda import formatear_moneda
 from .reportes import comprobante_pago_pdf, excel_response, pdf_response
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
@@ -254,7 +254,7 @@ class SeguridadRolesYSMTPTest(TestCase):
 
     def test_consulta_no_accede_a_gestion_por_url_ni_post(self):
         self.client.login(username="solo-consulta", password="ClaveSegura1")
-        self.assertEqual(self.client.get(reverse("pago_create")).status_code, 403)
+        self.assertIn(self.client.get("/pagos/registrar/").status_code, (403, 404))
         self.assertEqual(self.client.post(reverse("generar_cuotas"), {}).status_code, 403)
         self.assertEqual(self.client.get(reverse("configuracion")).status_code, 403)
 
@@ -548,14 +548,6 @@ class CorreccionesOperativasTest(TestCase):
         self.assertContains(respuesta, "no puede ser anterior a la fecha actual")
         self.assertFalse(Pago.objects.filter(residente=self.residente, periodo="2026-08").exists())
 
-    def test_registrar_pago_completo_crea_abono_y_movimiento(self):
-        respuesta = self.client.post(reverse("pago_create"), {"geriatrico": self.geriatrico.pk, "residente": self.residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1000.00", "fecha_vencimiento": date.today(), "fecha_pago": date.today(), "medio_pago": Pago.MedioPago.EFECTIVO, "observaciones": "Pago web"})
-        pago = Pago.objects.get(residente=self.residente, periodo="2026-08")
-        self.assertRedirects(respuesta, reverse("pago_detail", args=[pago.pk]))
-        self.assertEqual(pago.estado, Pago.Estado.PAGADO)
-        self.assertTrue(CajaMovimiento.objects.filter(pago=pago, tipo=CajaMovimiento.Tipo.INGRESO, importe=Decimal("1000.00")).exists())
-
-
 class FormatoMonetarioTest(TestCase):
     def test_formato_argentino_con_miles_centavos_y_cero(self):
         self.assertEqual(formatear_moneda(1200000), "$ 1.200.000,00")
@@ -565,9 +557,6 @@ class FormatoMonetarioTest(TestCase):
     def test_formularios_aceptan_punto_y_coma(self):
         geriatrico = Geriatrico.objects.create(nombre="Geri moneda", codigo="GM", direccion="Calle", capacidad_total=2)
         residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Moneda", dni="99887766", fecha_ingreso=date.today(), contacto_familiar="María Pérez")
-        pago_form = PagoForm({"geriatrico": geriatrico.pk, "residente": residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1.200.000,50", "fecha_vencimiento": date.today(), "fecha_pago": "", "medio_pago": "", "observaciones": ""})
-        self.assertTrue(pago_form.is_valid(), pago_form.errors)
-        self.assertEqual(pago_form.cleaned_data["monto"], Decimal("1200000.50"))
         parcial_form = PagoParcialForm({"monto": "85000.5", "fecha_pago": date.today(), "medio_pago": "", "observaciones": ""})
         self.assertTrue(parcial_form.is_valid(), parcial_form.errors)
         categoria = CategoriaCaja.objects.create(nombre="Moneda")
@@ -637,20 +626,19 @@ class OperacionFinancieraFechasTest(TestCase):
         futura = date.today() + timedelta(days=1)
         residente_form = ResidenteForm({"geriatrico": self.geriatrico.pk, "nombre": "Luis", "apellido": "Futuro", "dni": "88990011", "fecha_ingreso": futura, "contacto_familiar": "Juan Pérez", "movilidad": Residente.Movilidad.INDEPENDIENTE, "estado": Residente.Estado.ACTIVO})
         self.assertFalse(residente_form.is_valid()); self.assertIn("fecha_ingreso", residente_form.errors)
-        pago_form = PagoForm({"geriatrico": self.geriatrico.pk, "residente": self.residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1000", "fecha_vencimiento": futura, "fecha_pago": futura, "medio_pago": "", "observaciones": ""})
-        self.assertFalse(pago_form.is_valid()); self.assertIn("fecha_pago", pago_form.errors)
+        pago = Pago(residente=self.residente, periodo="2026-08", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=futura, fecha_pago=futura)
+        with self.assertRaises(ValidationError):
+            pago.full_clean()
         parcial_form = PagoParcialForm({"monto": "100", "fecha_pago": futura, "medio_pago": "", "observaciones": ""})
         self.assertFalse(parcial_form.is_valid()); self.assertIn("fecha_pago", parcial_form.errors)
         categoria = CategoriaCaja.objects.create(nombre="Operativo")
         egreso_form = EgresoCajaForm({"fecha": futura, "geriatrico": self.geriatrico.pk, "categoria": categoria.pk, "proveedor_beneficiario": "Proveedor", "descripcion": "", "importe": "10", "medio_pago": "", "observaciones": ""})
         self.assertFalse(egreso_form.is_valid()); self.assertIn("fecha", egreso_form.errors)
 
-    def test_pago_filtra_residentes_activos_del_geriatrico_y_registra_cobro(self):
-        form = PagoForm({"geriatrico": self.geriatrico.pk, "residente": self.residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1000", "fecha_vencimiento": date.today(), "fecha_pago": date.today(), "medio_pago": Pago.MedioPago.EFECTIVO, "observaciones": ""})
-        self.assertIn(self.residente, form.fields["residente"].queryset); self.assertNotIn(self.otro_residente, form.fields["residente"].queryset)
-        respuesta = self.client.post(reverse("pago_create"), form.data)
-        self.assertEqual(respuesta.status_code, 302)
-        pago = Pago.objects.get(residente=self.residente, periodo="2026-08")
+    def test_cuota_registra_abono_y_movimiento_de_caja(self):
+        pago = Pago.objects.create(residente=self.residente, periodo="2026-08", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        respuesta = self.client.post(reverse("pago_detail", args=[pago.pk]), {"monto": "1000", "fecha_pago": date.today(), "medio_pago": Pago.MedioPago.EFECTIVO, "observaciones": ""})
+        self.assertEqual(respuesta.status_code, 302); pago.refresh_from_db()
         self.assertEqual(pago.estado, Pago.Estado.PAGADO); self.assertEqual(pago.saldo_pendiente, Decimal("0.00"))
         self.assertTrue(CajaMovimiento.objects.filter(pago=pago, importe=Decimal("1000.00"), tipo=CajaMovimiento.Tipo.INGRESO).exists())
 
@@ -692,6 +680,23 @@ class CierreCajaExperienciaTest(TestCase):
         self.assertContains(self.client.get(reverse("caja_cierres")), "Geri cierre")
         pdf = self.client.get(reverse("caja_cierre_pdf", args=[cierre.pk]))
         self.assertEqual(pdf.status_code, 200); self.assertEqual(pdf["Content-Type"], "application/pdf")
+
+    def test_cierres_historicos_sin_geriatrico_se_muestran_y_descargan(self):
+        cierre = CajaCierre.objects.create(
+            fecha=(date.today() - timedelta(days=32)).replace(day=1),
+            saldo_inicial=Decimal("0.00"), ingresos=Decimal("100.00"), egresos=Decimal("20.00"),
+            resultado=Decimal("80.00"), saldo_final=Decimal("80.00"), cantidad_cobros=1,
+            cantidad_egresos=1, cerrado_por=self.usuario,
+        )
+        historial = self.client.get(reverse("caja_cierres"))
+        self.assertContains(historial, "Todos los geriátricos")
+        pdf = self.client.get(reverse("caja_cierre_pdf", args=[cierre.pk]))
+        self.assertEqual(pdf.status_code, 200); self.assertEqual(pdf["Content-Type"], "application/pdf")
+
+    def test_no_existe_el_flujo_publico_registrar_pago(self):
+        respuesta = self.client.get(reverse("pago_list"))
+        self.assertNotContains(respuesta, "Registrar pago")
+        self.assertIn(self.client.get("/pagos/registrar/").status_code, (403, 404))
 
     def test_no_recalcula_un_cierre_existente_sin_confirmacion(self):
         self.client.post(reverse("caja_cierre"), {"geriatrico": self.geriatrico.pk})

@@ -386,6 +386,10 @@ class CajaCierre(models.Model):
             models.UniqueConstraint(fields=["fecha", "geriatrico"], name="cierre_unico_por_geriatrico_y_mes"),
         ]
 
+    @property
+    def nombre_geriatrico(self):
+        return self.geriatrico.nombre if self.geriatrico else "Todos los geriátricos"
+
 
 class ConfiguracionInstitucional(models.Model):
     nombre_institucion = models.CharField(max_length=150, default="Dulce Atardecer")

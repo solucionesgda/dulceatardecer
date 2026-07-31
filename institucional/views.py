@@ -19,7 +19,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoForm, PagoParcialForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
+from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response, reporte_residentes_pdf
 
@@ -614,56 +614,6 @@ class ExportarPagosView(PagoListView):
         return excel_response("pagos", columnas, filas) if formato == "excel" else pdf_response("Reporte de pagos", columnas, filas, institucion, request.user)
 
 
-class PagoCreateView(LoginRequiredMixin, CreateView):
-    model = Pago
-    form_class = PagoForm
-    template_name = "institucional/pago_form.html"
-
-    def get_initial(self):
-        initial = super().get_initial()
-        residente = self.request.GET.get("residente")
-        if residente:
-            initial["residente"] = residente
-        return initial
-
-    def get_success_url(self):
-        return reverse("pago_detail", kwargs={"pk": self.object.pk})
-
-    def form_valid(self, form):
-        try:
-            with transaction.atomic():
-                response = super().form_valid(form)
-        except (ValidationError, IntegrityError):
-            form.add_error(None, "No se pudo registrar el pago. Revisá los datos e intentá nuevamente.")
-            return self.form_invalid(form)
-        messages.success(self.request, "Pago registrado correctamente.")
-        return response
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["montos_residentes"] = {
-            str(residente.pk): str(residente.monto_mensual or "")
-            for residente in Residente.objects.filter(estado=Residente.Estado.ACTIVO).only("pk", "monto_mensual")
-        }
-        context["residentes_por_geriatrico"] = {
-            str(geriatrico.pk): [
-                {"id": residente.pk, "nombre": str(residente)}
-                for residente in Residente.objects.filter(geriatrico=geriatrico, estado=Residente.Estado.ACTIVO)
-            ]
-            for geriatrico in Geriatrico.objects.filter(activo=True)
-        }
-        return context
-
-
-class PagoUpdateView(LoginRequiredMixin, UpdateView):
-    model = Pago
-    form_class = PagoForm
-    template_name = "institucional/pago_form.html"
-
-    def get_success_url(self):
-        return reverse("pago_detail", kwargs={"pk": self.object.pk})
-
-
 class PagoDetailView(LoginRequiredMixin, DetailView):
     model = Pago
     template_name = "institucional/pago_detail.html"
@@ -1016,7 +966,7 @@ class DescargarCierreCajaView(LoginRequiredMixin, View):
         cierre = get_object_or_404(CajaCierre.objects.select_related("geriatrico", "cerrado_por"), pk=pk)
         institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
         filas = [
-            ("Geriátrico", cierre.geriatrico.nombre),
+            ("Geriátrico", cierre.nombre_geriatrico),
             ("Período", cierre.fecha.strftime("%m/%Y")),
             ("Saldo inicial", cierre.saldo_inicial),
             ("Ingresos del mes", cierre.ingresos),
