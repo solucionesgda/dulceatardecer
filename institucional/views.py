@@ -643,7 +643,14 @@ class PagoCreateView(LoginRequiredMixin, CreateView):
         context = super().get_context_data(**kwargs)
         context["montos_residentes"] = {
             str(residente.pk): str(residente.monto_mensual or "")
-            for residente in Residente.objects.only("pk", "monto_mensual")
+            for residente in Residente.objects.filter(estado=Residente.Estado.ACTIVO).only("pk", "monto_mensual")
+        }
+        context["residentes_por_geriatrico"] = {
+            str(geriatrico.pk): [
+                {"id": residente.pk, "nombre": str(residente)}
+                for residente in Residente.objects.filter(geriatrico=geriatrico, estado=Residente.Estado.ACTIVO)
+            ]
+            for geriatrico in Geriatrico.objects.filter(activo=True)
         }
         return context
 
@@ -887,12 +894,11 @@ class CajaListView(LoginRequiredMixin, ListView):
         egresos = CajaMovimiento.objects.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
         hoy = date.today()
         resumen_dia = CajaMovimiento.resumen_fecha(hoy)
-        resumen_dia["saldo_final"] = resumen_dia["ingresos"] - resumen_dia["egresos"]
-        resumen_dia["saldo_inicial"] = Decimal("0.00")
         inicio_mes = hoy.replace(day=1)
         movimientos_mes = CajaMovimiento.objects.filter(fecha__gte=inicio_mes, fecha__lte=hoy)
-        ingresos_mes = movimientos_mes.filter(tipo=CajaMovimiento.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
-        egresos_mes = movimientos_mes.filter(tipo=CajaMovimiento.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        resumen_mes = CajaMovimiento.resumen_mes(hoy)
+        ingresos_mes = resumen_mes["ingresos"]
+        egresos_mes = resumen_mes["egresos"]
         categorias = list(movimientos_mes.filter(tipo=CajaMovimiento.Tipo.EGRESO).values("categoria__nombre").annotate(total=Sum("importe")).order_by("-total"))
         maximo = max((item["total"] for item in categorias), default=Decimal("0.00"))
         for item in categorias:
@@ -909,7 +915,7 @@ class CajaListView(LoginRequiredMixin, ListView):
         for item in meses:
             item["ingresos_pct"] = item["ingresos"] / maximo_mensual * 100 if maximo_mensual else 0
             item["egresos_pct"] = item["egresos"] / maximo_mensual * 100 if maximo_mensual else 0
-        context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos, "resumen_dia": resumen_dia, "ingresos_mes": ingresos_mes, "egresos_mes": egresos_mes, "resultado_mes": ingresos_mes - egresos_mes, "egresos_categoria": categorias, "movimientos_mensuales": meses, "geriatrico_opciones": Geriatrico.objects.all(), "categoria_opciones": CategoriaCaja.objects.filter(activa=True), "medio_pago_opciones": Pago.MedioPago.choices, "filtros": self.request.GET})
+        context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos, "resumen_dia": resumen_dia, "resumen_mes": resumen_mes, "ingresos_mes": ingresos_mes, "egresos_mes": egresos_mes, "resultado_mes": resumen_mes["resultado"], "egresos_categoria": categorias, "movimientos_mensuales": meses, "geriatrico_opciones": Geriatrico.objects.all(), "categoria_opciones": CategoriaCaja.objects.filter(activa=True), "medio_pago_opciones": Pago.MedioPago.choices, "filtros": self.request.GET})
         return context
 
 
@@ -973,9 +979,10 @@ class CategoriaCajaListView(LoginRequiredMixin, ListView):
 
 class CajaCierreView(LoginRequiredMixin, View):
     def post(self, request):
-        resumen = CajaMovimiento.resumen_fecha(date.today())
-        CajaCierre.objects.update_or_create(fecha=date.today(), defaults={**resumen, "cerrado_por": request.user})
-        messages.success(request, "Cierre de caja generado correctamente.")
+        hoy = date.today()
+        resumen = CajaMovimiento.resumen_mes(hoy)
+        CajaCierre.objects.update_or_create(fecha=hoy.replace(day=1), defaults={**resumen, "cerrado_por": request.user})
+        messages.success(request, "Cierre mensual de caja generado correctamente.")
         return redirect("caja_list")
 
 

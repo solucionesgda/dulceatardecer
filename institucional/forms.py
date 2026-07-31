@@ -26,6 +26,7 @@ class GeriatricoForm(forms.ModelForm):
 
 
 class PagoForm(forms.ModelForm):
+    geriatrico = forms.ModelChoiceField(queryset=Geriatrico.objects.filter(activo=True), label="Geriátrico")
     class Meta:
         model = Pago
         fields = ("residente", "periodo", "concepto", "monto", "fecha_vencimiento", "fecha_pago", "medio_pago", "observaciones")
@@ -38,6 +39,12 @@ class PagoForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["monto"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Monto")
+        geriatrico_id = self.data.get("geriatrico") or self.initial.get("geriatrico") or getattr(getattr(self.instance, "residente", None), "geriatrico_id", None)
+        if geriatrico_id:
+            self.fields["geriatrico"].initial = geriatrico_id
+            self.fields["residente"].queryset = Residente.objects.filter(geriatrico_id=geriatrico_id, estado=Residente.Estado.ACTIVO)
+        else:
+            self.fields["residente"].queryset = Residente.objects.none()
         residente_id = self.data.get("residente") or self.initial.get("residente") or getattr(self.instance, "residente_id", None)
         if residente_id and not self.initial.get("monto"):
             try:
@@ -46,6 +53,16 @@ class PagoForm(forms.ModelForm):
                     self.initial["monto"] = monto
             except Residente.DoesNotExist:
                 pass
+
+    def clean(self):
+        cleaned_data = super().clean()
+        residente = cleaned_data.get("residente")
+        geriatrico = cleaned_data.get("geriatrico")
+        if residente and geriatrico and residente.geriatrico_id != geriatrico.pk:
+            self.add_error("residente", "Seleccioná un residente activo del geriátrico indicado.")
+        if cleaned_data.get("fecha_pago") and cleaned_data["fecha_pago"] > date.today():
+            self.add_error("fecha_pago", "La fecha de pago no puede ser posterior al día de hoy.")
+        return cleaned_data
 
 
 class PagoParcialForm(forms.ModelForm):
@@ -60,6 +77,12 @@ class PagoParcialForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["monto"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Monto")
+
+    def clean_fecha_pago(self):
+        fecha_pago = self.cleaned_data["fecha_pago"]
+        if fecha_pago > date.today():
+            raise forms.ValidationError("La fecha de abono no puede ser posterior al día de hoy.")
+        return fecha_pago
 
 
 class GenerarCuotasForm(forms.Form):
@@ -115,6 +138,12 @@ class EgresoCajaForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["categoria"].queryset = CategoriaCaja.objects.filter(activa=True)
         self.fields["importe"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Importe")
+
+    def clean_fecha(self):
+        fecha = self.cleaned_data["fecha"]
+        if fecha > date.today():
+            raise forms.ValidationError("La fecha del egreso no puede ser posterior al día de hoy.")
+        return fecha
 
 
 class CategoriaCajaForm(forms.ModelForm):
@@ -199,6 +228,12 @@ class ResidenteForm(forms.ModelForm):
             "telefono": forms.TextInput(attrs={"placeholder": "3415123456"}),
             "contacto_familiar": forms.TextInput(attrs={"placeholder": "Nombre y apellido"}),
         }
+
+    def clean_fecha_ingreso(self):
+        fecha_ingreso = self.cleaned_data["fecha_ingreso"]
+        if fecha_ingreso > date.today():
+            raise forms.ValidationError("La fecha de ingreso no puede ser posterior al día de hoy.")
+        return fecha_ingreso
 
 
 class PerfilUsuarioForm(UserChangeForm):

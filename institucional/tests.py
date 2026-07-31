@@ -10,7 +10,7 @@ from decimal import Decimal
 from io import BytesIO
 import zipfile
 from openpyxl import load_workbook
-from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoForm, PagoParcialForm
+from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoForm, PagoParcialForm, ResidenteForm
 from .moneda import formatear_moneda
 from .reportes import comprobante_pago_pdf, excel_response, pdf_response
 from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
@@ -172,7 +172,7 @@ class AccesoTest(TestCase):
         CajaMovimiento.objects.create(tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=residente.geriatrico, categoria=categoria, importe=Decimal("20.00"))
         self.client.login(username="consulta", password="clave-segura")
         self.client.post(reverse("caja_cierre"))
-        cierre = CajaCierre.objects.get(fecha=date.today())
+        cierre = CajaCierre.objects.get(fecha=date.today().replace(day=1))
         self.assertEqual(cierre.saldo_final, Decimal("80.00"))
 
     def test_exportaciones_caja_respetan_filtro_de_proveedor(self):
@@ -549,7 +549,7 @@ class CorreccionesOperativasTest(TestCase):
         self.assertFalse(Pago.objects.filter(residente=self.residente, periodo="2026-08").exists())
 
     def test_registrar_pago_completo_crea_abono_y_movimiento(self):
-        respuesta = self.client.post(reverse("pago_create"), {"residente": self.residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1000.00", "fecha_vencimiento": date.today(), "fecha_pago": date.today(), "medio_pago": Pago.MedioPago.EFECTIVO, "observaciones": "Pago web"})
+        respuesta = self.client.post(reverse("pago_create"), {"geriatrico": self.geriatrico.pk, "residente": self.residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1000.00", "fecha_vencimiento": date.today(), "fecha_pago": date.today(), "medio_pago": Pago.MedioPago.EFECTIVO, "observaciones": "Pago web"})
         pago = Pago.objects.get(residente=self.residente, periodo="2026-08")
         self.assertRedirects(respuesta, reverse("pago_detail", args=[pago.pk]))
         self.assertEqual(pago.estado, Pago.Estado.PAGADO)
@@ -565,7 +565,7 @@ class FormatoMonetarioTest(TestCase):
     def test_formularios_aceptan_punto_y_coma(self):
         geriatrico = Geriatrico.objects.create(nombre="Geri moneda", codigo="GM", direccion="Calle", capacidad_total=2)
         residente = Residente.objects.create(geriatrico=geriatrico, nombre="Ana", apellido="Moneda", dni="99887766", fecha_ingreso=date.today(), contacto_familiar="María Pérez")
-        pago_form = PagoForm({"residente": residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1.200.000,50", "fecha_vencimiento": date.today(), "fecha_pago": "", "medio_pago": "", "observaciones": ""})
+        pago_form = PagoForm({"geriatrico": geriatrico.pk, "residente": residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1.200.000,50", "fecha_vencimiento": date.today(), "fecha_pago": "", "medio_pago": "", "observaciones": ""})
         self.assertTrue(pago_form.is_valid(), pago_form.errors)
         self.assertEqual(pago_form.cleaned_data["monto"], Decimal("1200000.50"))
         parcial_form = PagoParcialForm({"monto": "85000.5", "fecha_pago": date.today(), "medio_pago": "", "observaciones": ""})
@@ -621,3 +621,51 @@ class ReporteResidentesPdfTest(TestCase):
         self.assertEqual(respuesta["Content-Type"], "application/pdf")
         for texto in (b"REPORTE DE RESIDENTES", b"Total de residentes", b"afiliado", b"Datanova IT Solutions", b"Reporte, Ana"):
             self.assertIn(texto, respuesta.content)
+
+
+class OperacionFinancieraFechasTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("operacion-fechas", password="ClaveSegura1")
+        self.usuario.groups.add(Group.objects.get_or_create(name="Secretaría")[0])
+        self.geriatrico = Geriatrico.objects.create(nombre="Geri operativo", codigo="GOP", direccion="Calle", capacidad_total=5)
+        self.otro_geriatrico = Geriatrico.objects.create(nombre="Geri alternativo", codigo="GAL", direccion="Calle", capacidad_total=5)
+        self.residente = Residente.objects.create(geriatrico=self.geriatrico, nombre="Ana", apellido="Operativa", dni="66778899", fecha_ingreso=date.today(), contacto_familiar="María Pérez", monto_mensual=Decimal("1000.00"))
+        self.otro_residente = Residente.objects.create(geriatrico=self.otro_geriatrico, nombre="Berta", apellido="Alternativa", dni="77889900", fecha_ingreso=date.today(), contacto_familiar="Lucía Pérez", monto_mensual=Decimal("1000.00"))
+        self.client.login(username="operacion-fechas", password="ClaveSegura1")
+
+    def test_rechaza_fechas_futuras_en_residente_pago_abono_y_egreso(self):
+        futura = date.today() + timedelta(days=1)
+        residente_form = ResidenteForm({"geriatrico": self.geriatrico.pk, "nombre": "Luis", "apellido": "Futuro", "dni": "88990011", "fecha_ingreso": futura, "contacto_familiar": "Juan Pérez", "movilidad": Residente.Movilidad.INDEPENDIENTE, "estado": Residente.Estado.ACTIVO})
+        self.assertFalse(residente_form.is_valid()); self.assertIn("fecha_ingreso", residente_form.errors)
+        pago_form = PagoForm({"geriatrico": self.geriatrico.pk, "residente": self.residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1000", "fecha_vencimiento": futura, "fecha_pago": futura, "medio_pago": "", "observaciones": ""})
+        self.assertFalse(pago_form.is_valid()); self.assertIn("fecha_pago", pago_form.errors)
+        parcial_form = PagoParcialForm({"monto": "100", "fecha_pago": futura, "medio_pago": "", "observaciones": ""})
+        self.assertFalse(parcial_form.is_valid()); self.assertIn("fecha_pago", parcial_form.errors)
+        categoria = CategoriaCaja.objects.create(nombre="Operativo")
+        egreso_form = EgresoCajaForm({"fecha": futura, "geriatrico": self.geriatrico.pk, "categoria": categoria.pk, "proveedor_beneficiario": "Proveedor", "descripcion": "", "importe": "10", "medio_pago": "", "observaciones": ""})
+        self.assertFalse(egreso_form.is_valid()); self.assertIn("fecha", egreso_form.errors)
+
+    def test_pago_filtra_residentes_activos_del_geriatrico_y_registra_cobro(self):
+        form = PagoForm({"geriatrico": self.geriatrico.pk, "residente": self.residente.pk, "periodo": "2026-08", "concepto": "Cuota", "monto": "1000", "fecha_vencimiento": date.today(), "fecha_pago": date.today(), "medio_pago": Pago.MedioPago.EFECTIVO, "observaciones": ""})
+        self.assertIn(self.residente, form.fields["residente"].queryset); self.assertNotIn(self.otro_residente, form.fields["residente"].queryset)
+        respuesta = self.client.post(reverse("pago_create"), form.data)
+        self.assertEqual(respuesta.status_code, 302)
+        pago = Pago.objects.get(residente=self.residente, periodo="2026-08")
+        self.assertEqual(pago.estado, Pago.Estado.PAGADO); self.assertEqual(pago.saldo_pendiente, Decimal("0.00"))
+        self.assertTrue(CajaMovimiento.objects.filter(pago=pago, importe=Decimal("1000.00"), tipo=CajaMovimiento.Tipo.INGRESO).exists())
+
+    def test_pago_parcial_actualiza_estado_y_caja(self):
+        pago = Pago.objects.create(residente=self.residente, periodo="2026-09", concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today())
+        respuesta = self.client.post(reverse("pago_detail", args=[pago.pk]), {"monto": "400", "fecha_pago": date.today(), "medio_pago": Pago.MedioPago.EFECTIVO, "observaciones": ""})
+        self.assertEqual(respuesta.status_code, 302); pago.refresh_from_db()
+        self.assertEqual(pago.estado, Pago.Estado.PARCIAL); self.assertEqual(pago.saldo_pendiente, Decimal("600.00"))
+        self.assertTrue(CajaMovimiento.objects.filter(pago=pago, importe=Decimal("400.00")).exists())
+
+    def test_indicadores_y_cierre_mensual(self):
+        pago = Pago.objects.create(residente=self.residente, periodo=date.today().strftime("%Y-%m"), concepto="Cuota", monto=Decimal("1000.00"), fecha_vencimiento=date.today(), fecha_pago=date.today())
+        categoria = CategoriaCaja.objects.create(nombre="Insumos operativos")
+        CajaMovimiento.objects.create(fecha=date.today(), tipo=CajaMovimiento.Tipo.EGRESO, geriatrico=self.geriatrico, categoria=categoria, importe=Decimal("250.00"), descripcion="Compra")
+        respuesta = self.client.get(reverse("caja_list"))
+        self.assertEqual(respuesta.context["ingresos_mes"], Decimal("1000.00")); self.assertEqual(respuesta.context["egresos_mes"], Decimal("250.00")); self.assertEqual(respuesta.context["resultado_mes"], Decimal("750.00")); self.assertEqual(response_context := respuesta.context["saldo_actual"], Decimal("750.00"))
+        self.client.post(reverse("caja_cierre")); cierre = CajaCierre.objects.get(fecha=date.today().replace(day=1))
+        self.assertEqual(cierre.resultado, Decimal("750.00")); self.assertEqual(cierre.saldo_final, Decimal("750.00")); self.assertEqual(cierre.cantidad_cobros, 1); self.assertEqual(cierre.cantidad_egresos, 1)

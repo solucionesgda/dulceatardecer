@@ -101,6 +101,8 @@ class Residente(models.Model):
 
     def clean(self):
         super().clean()
+        if self.fecha_ingreso and self.fecha_ingreso > date.today():
+            raise ValidationError({"fecha_ingreso": "La fecha de ingreso no puede ser posterior al día de hoy."})
         if self.obra_social == self.ObraSocial.OTRA and not self.obra_social_otra.strip():
             raise ValidationError({"obra_social_otra": "Indicá el nombre de la obra social o prepaga."})
         if self.obra_social != self.ObraSocial.OTRA:
@@ -132,7 +134,6 @@ class Residente(models.Model):
             residentes_activos = residentes_activos.exclude(pk=self.pk)
         if residentes_activos.count() >= self.geriatrico.capacidad_total:
             raise ValidationError({"geriatrico": "No se puede dar de alta un residente activo: el geriátrico alcanzó su capacidad."})
-
 
 class Pago(models.Model):
     class Estado(models.TextChoices):
@@ -186,6 +187,7 @@ class Pago(models.Model):
         return self.Estado.PENDIENTE
 
     def save(self, *args, **kwargs):
+        self.full_clean()
         super().save(*args, **kwargs)
         if self.fecha_pago and not self.abonos.exists():
             PagoParcial.objects.create(
@@ -196,6 +198,8 @@ class Pago(models.Model):
 
     def clean(self):
         super().clean()
+        if self.fecha_pago and self.fecha_pago > date.today():
+            raise ValidationError({"fecha_pago": "La fecha de pago no puede ser posterior al día de hoy."})
         if self.pk and self.monto < self.total_abonado:
             raise ValidationError({"monto": "El monto no puede ser menor al total ya abonado."})
 
@@ -225,6 +229,8 @@ class PagoParcial(models.Model):
 
     def clean(self):
         super().clean()
+        if self.fecha_pago and self.fecha_pago > date.today():
+            raise ValidationError({"fecha_pago": "La fecha de abono no puede ser posterior al día de hoy."})
         if self.pago_id:
             anteriores = PagoParcial.objects.filter(pago_id=self.pago_id)
             if self.pk:
@@ -287,12 +293,20 @@ class CajaMovimiento(models.Model):
 
     def clean(self):
         super().clean()
+        if self.fecha and self.fecha > date.today():
+            raise ValidationError({"fecha": "La fecha del egreso no puede ser posterior al día de hoy."})
         if self.tipo == self.Tipo.EGRESO:
             if not self.categoria_id:
                 raise ValidationError({"categoria": "Seleccioná una categoría para el egreso."})
             saldo = self.saldo_actual(excluir_pk=self.pk)
             if self.importe > saldo:
                 raise ValidationError({"importe": "El egreso no puede superar el saldo disponible."})
+
+    def save(self, *args, **kwargs):
+        fecha = self._meta.get_field("fecha").to_python(self.fecha) if self.fecha else None
+        if fecha and fecha > date.today():
+            raise ValidationError({"fecha": "La fecha del egreso no puede ser posterior al día de hoy."})
+        super().save(*args, **kwargs)
 
     @classmethod
     def saldo_actual(cls, excluir_pk=None):
@@ -330,12 +344,29 @@ class CajaMovimiento(models.Model):
         saldo_inicial -= cls.objects.filter(fecha__lt=fecha, tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
         return {"saldo_inicial": saldo_inicial, "ingresos": ingresos, "egresos": egresos, "saldo_final": saldo_inicial + ingresos - egresos, "cantidad_cobros": movimientos.filter(tipo=cls.Tipo.INGRESO).count(), "cantidad_egresos": movimientos.filter(tipo=cls.Tipo.EGRESO).count()}
 
+    @classmethod
+    def resumen_mes(cls, fecha):
+        inicio = fecha.replace(day=1)
+        movimientos = cls.objects.filter(fecha__gte=inicio, fecha__lte=fecha)
+        ingresos = movimientos.filter(tipo=cls.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        egresos = movimientos.filter(tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        saldo_inicial = cls.saldo_actual_hasta(inicio)
+        return {"saldo_inicial": saldo_inicial, "ingresos": ingresos, "egresos": egresos, "resultado": ingresos - egresos, "saldo_final": saldo_inicial + ingresos - egresos, "cantidad_cobros": movimientos.filter(tipo=cls.Tipo.INGRESO).count(), "cantidad_egresos": movimientos.filter(tipo=cls.Tipo.EGRESO).count()}
+
+    @classmethod
+    def saldo_actual_hasta(cls, fecha):
+        movimientos = cls.objects.filter(fecha__lt=fecha)
+        ingresos = movimientos.filter(tipo=cls.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        egresos = movimientos.filter(tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
+        return ingresos - egresos
+
 
 class CajaCierre(models.Model):
     fecha = models.DateField(unique=True)
     saldo_inicial = models.DecimalField(max_digits=12, decimal_places=2)
     ingresos = models.DecimalField(max_digits=12, decimal_places=2)
     egresos = models.DecimalField(max_digits=12, decimal_places=2)
+    resultado = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     saldo_final = models.DecimalField(max_digits=12, decimal_places=2)
     cantidad_cobros = models.PositiveIntegerField()
     cantidad_egresos = models.PositiveIntegerField()
