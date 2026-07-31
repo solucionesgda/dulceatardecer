@@ -171,8 +171,8 @@ class AccesoTest(TestCase):
         categoria, _ = CategoriaCaja.objects.get_or_create(nombre="Farmacia")
         CajaMovimiento.objects.create(tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=residente.geriatrico, categoria=categoria, importe=Decimal("20.00"))
         self.client.login(username="consulta", password="clave-segura")
-        self.client.post(reverse("caja_cierre"))
-        cierre = CajaCierre.objects.get(fecha=date.today().replace(day=1))
+        self.client.post(reverse("caja_cierre"), {"geriatrico": residente.geriatrico_id})
+        cierre = CajaCierre.objects.get(fecha=date.today().replace(day=1), geriatrico=residente.geriatrico)
         self.assertEqual(cierre.saldo_final, Decimal("80.00"))
 
     def test_exportaciones_caja_respetan_filtro_de_proveedor(self):
@@ -667,5 +667,38 @@ class OperacionFinancieraFechasTest(TestCase):
         CajaMovimiento.objects.create(fecha=date.today(), tipo=CajaMovimiento.Tipo.EGRESO, geriatrico=self.geriatrico, categoria=categoria, importe=Decimal("250.00"), descripcion="Compra")
         respuesta = self.client.get(reverse("caja_list"))
         self.assertEqual(respuesta.context["ingresos_mes"], Decimal("1000.00")); self.assertEqual(respuesta.context["egresos_mes"], Decimal("250.00")); self.assertEqual(respuesta.context["resultado_mes"], Decimal("750.00")); self.assertEqual(response_context := respuesta.context["saldo_actual"], Decimal("750.00"))
-        self.client.post(reverse("caja_cierre")); cierre = CajaCierre.objects.get(fecha=date.today().replace(day=1))
+        self.client.post(reverse("caja_cierre"), {"geriatrico": self.geriatrico.pk}); cierre = CajaCierre.objects.get(fecha=date.today().replace(day=1), geriatrico=self.geriatrico)
         self.assertEqual(cierre.resultado, Decimal("750.00")); self.assertEqual(cierre.saldo_final, Decimal("750.00")); self.assertEqual(cierre.cantidad_cobros, 1); self.assertEqual(cierre.cantidad_egresos, 1)
+
+
+class CierreCajaExperienciaTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("cierre-caja", password="ClaveSegura1")
+        self.usuario.groups.add(Group.objects.get_or_create(name="Secretaría")[0])
+        self.geriatrico = Geriatrico.objects.create(nombre="Geri cierre", codigo="GCI", direccion="Calle", capacidad_total=3)
+        self.categoria = CategoriaCaja.objects.create(nombre="Cierre categoría")
+        CajaMovimiento.objects.create(tipo=CajaMovimiento.Tipo.INGRESO, fecha=date.today(), geriatrico=self.geriatrico, importe=Decimal("500.00"), descripcion="Cobro")
+        CajaMovimiento.objects.create(tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=self.geriatrico, categoria=self.categoria, importe=Decimal("100.00"), descripcion="Compra")
+        self.client.login(username="cierre-caja", password="ClaveSegura1")
+
+    def test_crea_muestra_consulta_y_descarga_cierre(self):
+        respuesta = self.client.post(reverse("caja_cierre"), {"geriatrico": self.geriatrico.pk})
+        cierre = CajaCierre.objects.get(fecha=date.today().replace(day=1), geriatrico=self.geriatrico)
+        self.assertRedirects(respuesta, f"{reverse('caja_list')}?cierre={cierre.pk}")
+        self.assertEqual(cierre.ingresos, Decimal("500.00")); self.assertEqual(cierre.egresos, Decimal("100.00")); self.assertEqual(cierre.resultado, Decimal("400.00"))
+        respuesta = self.client.get(reverse("caja_list"))
+        self.assertEqual(respuesta.context["ultimo_cierre"], cierre)
+        self.assertContains(respuesta, "Último cierre mensual")
+        self.assertContains(self.client.get(reverse("caja_cierres")), "Geri cierre")
+        pdf = self.client.get(reverse("caja_cierre_pdf", args=[cierre.pk]))
+        self.assertEqual(pdf.status_code, 200); self.assertEqual(pdf["Content-Type"], "application/pdf")
+
+    def test_no_recalcula_un_cierre_existente_sin_confirmacion(self):
+        self.client.post(reverse("caja_cierre"), {"geriatrico": self.geriatrico.pk})
+        cierre = CajaCierre.objects.get(geriatrico=self.geriatrico)
+        CajaMovimiento.objects.create(tipo=CajaMovimiento.Tipo.INGRESO, fecha=date.today(), geriatrico=self.geriatrico, importe=Decimal("50.00"), descripcion="Cobro posterior")
+        respuesta = self.client.post(reverse("caja_cierre"), {"geriatrico": self.geriatrico.pk})
+        self.assertRedirects(respuesta, f"{reverse('caja_list')}?confirmar_cierre={cierre.pk}")
+        cierre.refresh_from_db(); self.assertEqual(cierre.ingresos, Decimal("500.00"))
+        self.client.post(reverse("caja_cierre"), {"geriatrico": self.geriatrico.pk, "confirmar_reemplazo": "1"})
+        cierre.refresh_from_db(); self.assertEqual(cierre.ingresos, Decimal("550.00"))

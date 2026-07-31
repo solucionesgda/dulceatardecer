@@ -345,24 +345,29 @@ class CajaMovimiento(models.Model):
         return {"saldo_inicial": saldo_inicial, "ingresos": ingresos, "egresos": egresos, "saldo_final": saldo_inicial + ingresos - egresos, "cantidad_cobros": movimientos.filter(tipo=cls.Tipo.INGRESO).count(), "cantidad_egresos": movimientos.filter(tipo=cls.Tipo.EGRESO).count()}
 
     @classmethod
-    def resumen_mes(cls, fecha):
+    def resumen_mes(cls, fecha, geriatrico=None):
         inicio = fecha.replace(day=1)
         movimientos = cls.objects.filter(fecha__gte=inicio, fecha__lte=fecha)
+        if geriatrico:
+            movimientos = movimientos.filter(geriatrico=geriatrico)
         ingresos = movimientos.filter(tipo=cls.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
         egresos = movimientos.filter(tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
-        saldo_inicial = cls.saldo_actual_hasta(inicio)
+        saldo_inicial = cls.saldo_actual_hasta(inicio, geriatrico=geriatrico)
         return {"saldo_inicial": saldo_inicial, "ingresos": ingresos, "egresos": egresos, "resultado": ingresos - egresos, "saldo_final": saldo_inicial + ingresos - egresos, "cantidad_cobros": movimientos.filter(tipo=cls.Tipo.INGRESO).count(), "cantidad_egresos": movimientos.filter(tipo=cls.Tipo.EGRESO).count()}
 
     @classmethod
-    def saldo_actual_hasta(cls, fecha):
+    def saldo_actual_hasta(cls, fecha, geriatrico=None):
         movimientos = cls.objects.filter(fecha__lt=fecha)
+        if geriatrico:
+            movimientos = movimientos.filter(geriatrico=geriatrico)
         ingresos = movimientos.filter(tipo=cls.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
         egresos = movimientos.filter(tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
         return ingresos - egresos
 
 
 class CajaCierre(models.Model):
-    fecha = models.DateField(unique=True)
+    fecha = models.DateField()
+    geriatrico = models.ForeignKey(Geriatrico, on_delete=models.PROTECT, related_name="cierres_caja", null=True, blank=True)
     saldo_inicial = models.DecimalField(max_digits=12, decimal_places=2)
     ingresos = models.DecimalField(max_digits=12, decimal_places=2)
     egresos = models.DecimalField(max_digits=12, decimal_places=2)
@@ -377,6 +382,9 @@ class CajaCierre(models.Model):
         ordering = ["-fecha"]
         verbose_name = "cierre de caja"
         verbose_name_plural = "cierres de caja"
+        constraints = [
+            models.UniqueConstraint(fields=["fecha", "geriatrico"], name="cierre_unico_por_geriatrico_y_mes"),
+        ]
 
 
 class ConfiguracionInstitucional(models.Model):

@@ -916,6 +916,13 @@ class CajaListView(LoginRequiredMixin, ListView):
             item["ingresos_pct"] = item["ingresos"] / maximo_mensual * 100 if maximo_mensual else 0
             item["egresos_pct"] = item["egresos"] / maximo_mensual * 100 if maximo_mensual else 0
         context.update({"total_ingresos": ingresos, "total_egresos": egresos, "saldo_actual": ingresos - egresos, "resumen_dia": resumen_dia, "resumen_mes": resumen_mes, "ingresos_mes": ingresos_mes, "egresos_mes": egresos_mes, "resultado_mes": resumen_mes["resultado"], "egresos_categoria": categorias, "movimientos_mensuales": meses, "geriatrico_opciones": Geriatrico.objects.all(), "categoria_opciones": CategoriaCaja.objects.filter(activa=True), "medio_pago_opciones": Pago.MedioPago.choices, "filtros": self.request.GET})
+        cierres = CajaCierre.objects.select_related("geriatrico", "cerrado_por")
+        context["ultimo_cierre"] = cierres.first()
+        context["cierres_recientes"] = cierres[:6]
+        cierre_id = self.request.GET.get("cierre")
+        context["cierre_reciente"] = get_object_or_404(cierres, pk=cierre_id) if cierre_id else None
+        confirmar_id = self.request.GET.get("confirmar_cierre")
+        context["cierre_a_confirmar"] = get_object_or_404(cierres, pk=confirmar_id) if confirmar_id else None
         return context
 
 
@@ -980,10 +987,48 @@ class CategoriaCajaListView(LoginRequiredMixin, ListView):
 class CajaCierreView(LoginRequiredMixin, View):
     def post(self, request):
         hoy = date.today()
-        resumen = CajaMovimiento.resumen_mes(hoy)
-        CajaCierre.objects.update_or_create(fecha=hoy.replace(day=1), defaults={**resumen, "cerrado_por": request.user})
-        messages.success(request, "Cierre mensual de caja generado correctamente.")
-        return redirect("caja_list")
+        geriatrico = get_object_or_404(Geriatrico, pk=request.POST.get("geriatrico"))
+        fecha_cierre = hoy.replace(day=1)
+        existente = CajaCierre.objects.filter(fecha=fecha_cierre, geriatrico=geriatrico).first()
+        if existente and request.POST.get("confirmar_reemplazo") != "1":
+            messages.warning(request, "Ya existe un cierre para este geriátrico y período. Confirmá si querés recalcularlo.")
+            return redirect(f"{reverse('caja_list')}?confirmar_cierre={existente.pk}")
+        resumen = CajaMovimiento.resumen_mes(hoy, geriatrico=geriatrico)
+        cierre, creado = CajaCierre.objects.update_or_create(
+            fecha=fecha_cierre,
+            geriatrico=geriatrico,
+            defaults={**resumen, "cerrado_por": request.user},
+        )
+        messages.success(request, "Cierre mensual de caja generado correctamente." if creado else "Cierre mensual recalculado correctamente.")
+        return redirect(f"{reverse('caja_list')}?cierre={cierre.pk}")
+
+
+class CierresCajaListView(LoginRequiredMixin, ListView):
+    model = CajaCierre
+    template_name = "institucional/caja_cierre_list.html"
+
+    def get_queryset(self):
+        return CajaCierre.objects.select_related("geriatrico", "cerrado_por")
+
+
+class DescargarCierreCajaView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        cierre = get_object_or_404(CajaCierre.objects.select_related("geriatrico", "cerrado_por"), pk=pk)
+        institucion, _ = ConfiguracionInstitucional.objects.get_or_create(pk=1)
+        filas = [
+            ("Geriátrico", cierre.geriatrico.nombre),
+            ("Período", cierre.fecha.strftime("%m/%Y")),
+            ("Saldo inicial", cierre.saldo_inicial),
+            ("Ingresos del mes", cierre.ingresos),
+            ("Egresos del mes", cierre.egresos),
+            ("Resultado del mes", cierre.resultado),
+            ("Saldo final", cierre.saldo_final),
+            ("Cantidad de ingresos", cierre.cantidad_cobros),
+            ("Cantidad de egresos", cierre.cantidad_egresos),
+            ("Cerrado por", cierre.cerrado_por or "—"),
+            ("Fecha de cierre", timezone.localtime(cierre.cerrado_en).strftime("%d/%m/%Y %H:%M")),
+        ]
+        return pdf_response("Cierre mensual de caja", ["Concepto", "Detalle"], filas, institucion, request.user)
 
 
 class ConfiguracionView(LoginRequiredMixin, TemplateView):
