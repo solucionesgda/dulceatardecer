@@ -1,6 +1,7 @@
 from django.contrib.auth.models import Group, Permission, User
 from django.core.exceptions import ValidationError
 from django.core import mail
+from django.core.management import call_command
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
@@ -9,11 +10,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
 import zipfile
+from unittest.mock import patch
 from openpyxl import load_workbook
 from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoParcialForm, ResidenteForm
 from .moneda import formatear_moneda
 from .reportes import comprobante_pago_pdf, excel_response, pdf_response
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
+from .management.commands.limpiar_datos_operativos import Command as LimpiarDatosOperativosCommand
 
 
 class AccesoTest(TestCase):
@@ -707,3 +710,53 @@ class CierreCajaExperienciaTest(TestCase):
         cierre.refresh_from_db(); self.assertEqual(cierre.ingresos, Decimal("500.00"))
         self.client.post(reverse("caja_cierre"), {"geriatrico": self.geriatrico.pk, "confirmar_reemplazo": "1"})
         cierre.refresh_from_db(); self.assertEqual(cierre.ingresos, Decimal("550.00"))
+
+
+class LimpiarDatosOperativosCommandTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("limpieza", password="ClaveSegura1")
+        self.geriatrico = Geriatrico.objects.create(nombre="Geri limpieza", codigo="GLI", direccion="Calle", capacidad_total=3)
+        self.configuracion = ConfiguracionInstitucional.objects.create(nombre_institucion="Dulce Atardecer")
+        self.categoria = CategoriaCaja.objects.create(nombre="Categoría limpieza")
+        self.obra_social = ObraSocial.objects.create(nombre="Cobertura limpieza")
+        self.personal = Personal.objects.create(nombre_completo="Personal Limpieza", dni="33444555", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Mañana", inicio_contrato=date.today())
+        self.norma = NormaPolitica.objects.create(titulo="Norma vigente", contenido="Contenido")
+        self.residente = Residente.objects.create(geriatrico=self.geriatrico, nombre="Ana", apellido="Limpieza", dni="22333444", fecha_ingreso=date.today(), contacto_familiar="María Pérez")
+        self.pago = Pago.objects.create(residente=self.residente, periodo="2026-08", concepto="Cuota", monto=Decimal("100.00"), fecha_vencimiento=date.today())
+        PagoParcial.objects.create(pago=self.pago, monto=Decimal("100.00"), fecha_pago=date.today(), usuario=self.usuario)
+        CajaCierre.objects.create(fecha=date.today().replace(day=1), geriatrico=self.geriatrico, saldo_inicial=Decimal("0.00"), ingresos=Decimal("100.00"), egresos=Decimal("0.00"), resultado=Decimal("100.00"), saldo_final=Decimal("100.00"), cantidad_cobros=1, cantidad_egresos=0, cerrado_por=self.usuario)
+        self.grilla = GrillaTurnos.objects.create(mes=date.today().month, anio=date.today().year)
+        AsignacionTurno.objects.create(grilla=self.grilla, personal=self.personal, dia=1, codigo=AsignacionTurno.Codigo.M)
+        self.tarea = Tarea.objects.create(titulo="Tarea operativa", asignada_a=self.personal, fecha=date.today(), turno=Tarea.Turno.MANANA)
+        LecturaNormaPolitica.objects.create(norma=self.norma, personal=self.personal)
+        InvitacionPersonal.objects.create(personal=self.personal)
+        HistorialEnvioEmail.objects.create(usuario=self.usuario, destinatario="test@example.com", documento="Comprobante", resultado="Enviado")
+
+    def test_elimina_datos_operativos_y_conserva_maestros(self):
+        call_command("limpiar_datos_operativos", "--confirmar")
+        for modelo in (Residente, Pago, PagoParcial, CajaMovimiento, CajaCierre, GrillaTurnos, AsignacionTurno, Tarea, LecturaNormaPolitica, InvitacionPersonal, HistorialEnvioEmail):
+            self.assertEqual(modelo.objects.count(), 0)
+        for objeto in (self.usuario, self.personal, self.geriatrico, self.configuracion, self.categoria, self.obra_social, self.norma):
+            self.assertTrue(objeto.__class__.objects.filter(pk=objeto.pk).exists())
+
+    def test_sin_confirmacion_no_elimina_datos(self):
+        with patch("builtins.input", return_value="CANCELAR"):
+            call_command("limpiar_datos_operativos")
+        self.assertTrue(Residente.objects.exists())
+        self.assertTrue(Pago.objects.exists())
+        self.assertTrue(CajaMovimiento.objects.exists())
+
+    def test_un_error_revierte_toda_la_limpieza(self):
+        original = LimpiarDatosOperativosCommand._eliminar
+
+        def falla_despues_del_primer_borrado(comando, modelo):
+            original(comando, modelo)
+            if modelo is CajaCierre:
+                raise RuntimeError("Error de prueba")
+
+        with patch.object(LimpiarDatosOperativosCommand, "_eliminar", new=falla_despues_del_primer_borrado):
+            with self.assertRaises(RuntimeError):
+                call_command("limpiar_datos_operativos", "--confirmar")
+        self.assertTrue(CajaCierre.objects.exists())
+        self.assertTrue(CajaMovimiento.objects.exists())
+        self.assertTrue(Residente.objects.exists())
