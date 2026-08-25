@@ -19,6 +19,16 @@ class AccesoEmpleadaMiddleware:
 
     def __call__(self, request):
         usuario = request.user
+        # El grupo funcional Administrador opera dentro de la aplicación. No
+        # equivale a un administrador técnico de Django, aunque por datos
+        # históricos alguno de esos usuarios tenga is_staff activado.
+        if (
+            usuario.is_authenticated
+            and request.path.startswith("/admin/")
+            and not usuario.is_superuser
+            and usuario.groups.filter(name="Administrador").exists()
+        ):
+            return HttpResponseForbidden("Esta cuenta no tiene acceso al administrador de Django.")
         if usuario.is_authenticated and not usuario.is_staff:
             try:
                 usuario.perfil_personal

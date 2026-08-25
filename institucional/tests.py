@@ -271,6 +271,26 @@ class SeguridadRolesYSMTPTest(TestCase):
         self.assertNotIn("smtp_contrasena", ConfiguracionInstitucionalForm().fields)
 
 
+class AccesoDjangoAdminPorRolTest(TestCase):
+    def setUp(self):
+        self.administrador = User.objects.create_user(
+            "administrador-funcional", password="ClaveSegura1", is_staff=True
+        )
+        self.administrador.groups.add(Group.objects.get_or_create(name="Administrador")[0])
+        self.superusuario = User.objects.create_superuser(
+            "superusuario-tecnico", "superusuario@example.test", "ClaveSegura1"
+        )
+
+    def test_administrador_funcional_no_accede_al_django_admin(self):
+        self.client.login(username="administrador-funcional", password="ClaveSegura1")
+        self.assertEqual(self.client.get("/admin/").status_code, 403)
+        self.assertEqual(self.client.get(reverse("inicio")).status_code, 200)
+
+    def test_superusuario_mantiene_acceso_al_django_admin(self):
+        self.client.login(username="superusuario-tecnico", password="ClaveSegura1")
+        self.assertEqual(self.client.get("/admin/").status_code, 200)
+
+
 class TareasTest(TestCase):
     def setUp(self):
         self.usuario = User.objects.create_user("empleada", password="clave-segura")
