@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme
-from .models import AdelantoSueldo, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
+from .models import AdelantoSueldo, CajaCierre, CajaMovimiento, CategoriaCaja, Comunicado, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, HistorialEnvioEmail, InvitacionPersonal, LecturaComunicado, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
 
 
 @admin.register(Geriatrico)
@@ -239,6 +239,27 @@ class NormaPoliticaAdmin(admin.ModelAdmin):
     list_filter = ("activa", "publicada_en")
     search_fields = ("titulo", "contenido")
     readonly_fields = ("publicada_en",)
+
+
+@admin.register(Comunicado)
+class ComunicadoAdmin(admin.ModelAdmin):
+    list_display = ("titulo", "fecha", "nombre_geriatrico", "prioridad", "activo", "usuario")
+    list_filter = ("prioridad", "activo", "geriatrico", "fecha")
+    search_fields = ("titulo", "mensaje")
+    readonly_fields = ("usuario", "creado_en")
+
+    def save_model(self, request, obj, form, change):
+        if not obj.usuario_id:
+            obj.usuario = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(LecturaComunicado)
+class LecturaComunicadoAdmin(admin.ModelAdmin):
+    list_display = ("comunicado", "personal", "leido_en")
+    list_filter = ("comunicado", "leido_en")
+    search_fields = ("comunicado__titulo", "personal__nombre_completo")
+    readonly_fields = ("comunicado", "personal", "leido_en")
 
 
 @admin.register(LecturaNormaPolitica)

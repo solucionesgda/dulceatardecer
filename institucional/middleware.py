@@ -5,7 +5,7 @@ from django.shortcuts import redirect
 class AccesoEmpleadaMiddleware:
     """Aplica la política de acceso en backend para personal y grupos."""
 
-    prefijos_permitidos = ("/tareas/", "/normas/", "/mi-perfil/", "/mis-turnos/", "/notificaciones/", "/logout/", "/static/", "/media/")
+    prefijos_permitidos = ("/tareas/", "/normas/", "/comunicados/", "/mi-perfil/", "/mis-turnos/", "/notificaciones/", "/logout/", "/static/", "/media/")
     prefijos_administracion = ("/configuracion/", "/admin/")
     rutas_post_permitidas_consulta = ("/logout/", "/mi-perfil/")
     rutas_solo_gestion = (

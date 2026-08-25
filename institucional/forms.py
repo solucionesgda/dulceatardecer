@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from datetime import date
 from decimal import Decimal
 
-from .models import AdelantoSueldo, AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, Geriatrico, MedioPagoConfiguracion, ObraSocial, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
+from .models import AdelantoSueldo, AsignacionTurno, CajaMovimiento, CategoriaCaja, Comunicado, ConfiguracionInstitucional, GastoRecurrente, Geriatrico, MedioPagoConfiguracion, ObraSocial, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .moneda import decimal_importe
 
 
@@ -200,8 +200,24 @@ class PorcentajeActualizacionForm(forms.ModelForm):
 class PersonalForm(forms.ModelForm):
     class Meta:
         model = Personal
-        fields = ("nombre_completo", "dni", "cargo", "turno_habitual", "telefono", "cuil", "inicio_contrato", "estado", "observaciones")
+        fields = ("nombre_completo", "geriatrico", "dni", "cargo", "turno_habitual", "telefono", "cuil", "inicio_contrato", "estado", "observaciones")
         widgets = {"inicio_contrato": forms.DateInput(attrs={"type": "date"}), "observaciones": forms.Textarea(attrs={"rows": 3})}
+
+
+class ComunicadoForm(forms.ModelForm):
+    class Meta:
+        model = Comunicado
+        fields = ("titulo", "mensaje", "fecha", "geriatrico", "prioridad", "activo")
+        widgets = {
+            "fecha": forms.DateInput(attrs={"type": "date"}),
+            "mensaje": forms.Textarea(attrs={"rows": 5}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["geriatrico"].required = False
+        self.fields["geriatrico"].label = "Alcance del comunicado"
+        self.fields["geriatrico"].empty_label = "Todos los geriátricos"
 
 
 class AdelantoSueldoForm(forms.ModelForm):

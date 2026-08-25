@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoParcialForm, ResidenteForm
 from .moneda import formatear_moneda
 from .reportes import comprobante_pago_pdf, excel_response, pdf_response
-from .models import AdelantoSueldo, AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
+from .models import AdelantoSueldo, AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, Comunicado, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaComunicado, LecturaNormaPolitica, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
 from .management.commands.limpiar_datos_operativos import Command as LimpiarDatosOperativosCommand
 
 
@@ -991,3 +991,58 @@ class AdelantosSueldoTest(TestCase):
         self.assertEqual(adelanto.importe, Decimal("250.00"))
         self.assertEqual(adelanto.observaciones, "Importe corregido")
         self.assertEqual(adelanto.usuario, self.usuario)
+
+
+class ComunicadosTest(TestCase):
+    def setUp(self):
+        self.g1 = Geriatrico.objects.create(nombre="Geri Norte", codigo="GN", direccion="Calle 1", capacidad_total=5)
+        self.g2 = Geriatrico.objects.create(nombre="Geri Sur", codigo="GS", direccion="Calle 2", capacidad_total=5)
+        self.usuario_empleada = User.objects.create_user("empleada-comunicados", password="ClaveSegura1")
+        self.empleada = Personal.objects.create(usuario=self.usuario_empleada, nombre_completo="Ana Norte", geriatrico=self.g1, dni="55667788", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Mañana", inicio_contrato=date.today())
+        self.otro_personal = Personal.objects.create(nombre_completo="Berta Sur", geriatrico=self.g2, dni="66778899", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Tarde", inicio_contrato=date.today())
+        self.admin = User.objects.create_user("admin-comunicados", password="ClaveSegura1", is_staff=True)
+
+    def test_empleada_solo_ve_comunicados_generales_y_de_su_geriatrico(self):
+        general = Comunicado.objects.create(titulo="General", mensaje="Para todas", fecha=date.today(), usuario=self.admin)
+        propio = Comunicado.objects.create(titulo="Norte", mensaje="Solo Norte", fecha=date.today(), geriatrico=self.g1, usuario=self.admin, prioridad=Comunicado.Prioridad.IMPORTANTE)
+        Comunicado.objects.create(titulo="Sur", mensaje="Solo Sur", fecha=date.today(), geriatrico=self.g2, usuario=self.admin)
+        self.client.login(username="empleada-comunicados", password="ClaveSegura1")
+        respuesta = self.client.get(reverse("comunicado_list"))
+        self.assertContains(respuesta, general.titulo)
+        self.assertContains(respuesta, propio.titulo)
+        self.assertNotContains(respuesta, "Solo Sur")
+        self.assertEqual(set(respuesta.context["object_list"].values_list("pk", flat=True)), {general.pk, propio.pk})
+
+    def test_empleada_puede_marcar_leido_sin_acceder_a_otro_geriatrico(self):
+        propio = Comunicado.objects.create(titulo="Norte", mensaje="Mensaje", fecha=date.today(), geriatrico=self.g1, usuario=self.admin)
+        ajeno = Comunicado.objects.create(titulo="Sur", mensaje="Mensaje", fecha=date.today(), geriatrico=self.g2, usuario=self.admin)
+        self.client.login(username="empleada-comunicados", password="ClaveSegura1")
+        respuesta = self.client.post(reverse("comunicado_leer", args=[propio.pk]))
+        self.assertRedirects(respuesta, reverse("comunicado_list"))
+        self.assertTrue(LecturaComunicado.objects.filter(comunicado=propio, personal=self.empleada).exists())
+        self.assertEqual(self.client.post(reverse("comunicado_leer", args=[ajeno.pk])).status_code, 403)
+        self.assertEqual(self.client.get(reverse("comunicado_create")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("comunicado_update", args=[propio.pk])).status_code, 403)
+
+    def test_comunicado_no_leido_aparece_en_notificaciones_de_la_empleada(self):
+        Comunicado.objects.create(titulo="Aviso Norte", mensaje="Mensaje", fecha=date.today(), geriatrico=self.g1, usuario=self.admin)
+        self.client.login(username="empleada-comunicados", password="ClaveSegura1")
+        respuesta = self.client.get(reverse("notificaciones"))
+        self.assertContains(respuesta, "comunicado(s) nuevo(s) sin leer")
+        self.assertContains(respuesta, reverse("comunicado_list"))
+
+    def test_administracion_publica_y_consulta_lecturas(self):
+        self.client.login(username="admin-comunicados", password="ClaveSegura1")
+        respuesta = self.client.post(reverse("comunicado_create"), {
+            "titulo": "Cambio de turno", "mensaje": "Revisar la grilla.", "fecha": date.today(),
+            "geriatrico": "", "prioridad": Comunicado.Prioridad.URGENTE, "activo": "on",
+        })
+        self.assertRedirects(respuesta, reverse("comunicado_list"))
+        comunicado = Comunicado.objects.get()
+        self.assertEqual(comunicado.usuario, self.admin)
+        LecturaComunicado.objects.create(comunicado=comunicado, personal=self.empleada)
+        lecturas = self.client.get(reverse("comunicado_lecturas", args=[comunicado.pk]))
+        self.assertContains(lecturas, "Ana Norte")
+        self.assertContains(lecturas, "Berta Sur")
+        self.assertContains(lecturas, "Leído")
+        self.assertContains(lecturas, "Pendiente")

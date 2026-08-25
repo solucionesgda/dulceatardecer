@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}Lecturas del comunicado{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4"><div><h1 class="h3 mb-1">Lecturas: {{ object.titulo }}</h1><p class="text-muted mb-0">{{ object.nombre_geriatrico }} · {{ object.fecha|date:'d/m/Y' }}</p></div><a class="btn btn-outline-secondary" href="{% url 'comunicado_list' %}">Volver</a></div>
+<div class="card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Empleada</th><th>Estado</th><th>Fecha de lectura</th></tr></thead><tbody>{% for item in lecturas_personal %}<tr><td>{{ item.personal.nombre_completo }}</td>{% if item.lectura %}<td><span class="badge text-bg-success">Leído</span></td><td>{{ item.lectura.leido_en|date:'d/m/Y H:i' }}</td>{% else %}<td><span class="badge text-bg-warning">Pendiente</span></td><td>—</td>{% endif %}</tr>{% empty %}<tr><td colspan="3" class="text-center text-muted py-4">No hay empleadas destinatarias para este comunicado.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

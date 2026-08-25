@@ -591,6 +591,7 @@ class Personal(models.Model):
         OTRO = "Otro", "Otro"
 
     nombre_completo = models.CharField(max_length=150)
+    geriatrico = models.ForeignKey(Geriatrico, on_delete=models.PROTECT, blank=True, null=True, related_name="personal")
     usuario = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="perfil_personal")
     dni = models.CharField(max_length=20, unique=True, validators=[RegexValidator(r"^\d+$", "El DNI solo puede contener números.")])
     cargo = models.CharField(max_length=30, choices=Cargo.choices)
@@ -607,6 +608,48 @@ class Personal(models.Model):
         verbose_name_plural = "personal"
 
     def __str__(self): return self.nombre_completo
+
+
+class Comunicado(models.Model):
+    class Prioridad(models.TextChoices):
+        NORMAL = "Normal", "Normal"
+        IMPORTANTE = "Importante", "Importante"
+        URGENTE = "Urgente", "Urgente"
+
+    titulo = models.CharField(max_length=180)
+    mensaje = models.TextField()
+    fecha = models.DateField(default=date.today)
+    geriatrico = models.ForeignKey(Geriatrico, on_delete=models.PROTECT, blank=True, null=True, related_name="comunicados")
+    prioridad = models.CharField(max_length=12, choices=Prioridad.choices, default=Prioridad.NORMAL)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="comunicados_publicados")
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-fecha", "-pk"]
+        verbose_name = "comunicado"
+        verbose_name_plural = "comunicados"
+
+    @property
+    def nombre_geriatrico(self):
+        return self.geriatrico.nombre if self.geriatrico else "Todos los geriátricos"
+
+    def corresponde_a(self, personal):
+        return self.geriatrico_id is None or self.geriatrico_id == personal.geriatrico_id
+
+    def __str__(self):
+        return self.titulo
+
+
+class LecturaComunicado(models.Model):
+    comunicado = models.ForeignKey(Comunicado, on_delete=models.CASCADE, related_name="lecturas")
+    personal = models.ForeignKey(Personal, on_delete=models.CASCADE, related_name="lecturas_comunicados")
+    leido_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("comunicado", "personal"), name="lectura_comunicado_unica_por_personal")]
+        verbose_name = "lectura de comunicado"
+        verbose_name_plural = "lecturas de comunicados"
 
 
 class AdelantoSueldo(models.Model):

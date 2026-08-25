@@ -2,7 +2,7 @@ from datetime import date
 from django.db.models import Count, Q
 from django.utils import timezone
 
-from .models import Geriatrico, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, Personal, Residente, Tarea
+from .models import Comunicado, Geriatrico, InvitacionPersonal, LecturaComunicado, LecturaNormaPolitica, NormaPolitica, Pago, Personal, Residente, Tarea
 
 
 def notificaciones(request):
@@ -41,10 +41,16 @@ def notificaciones(request):
             vencidas = Tarea.objects.filter(asignada_a=personal, fecha__lt=date.today()).exclude(estado=Tarea.Estado.COMPLETADA).count()
             leidas = LecturaNormaPolitica.objects.filter(personal=personal).values_list("norma_id", flat=True)
             normas = NormaPolitica.objects.filter(activa=True).exclude(pk__in=leidas).count()
+            comunicaciones_leidas = LecturaComunicado.objects.filter(personal=personal).values_list("comunicado_id", flat=True)
+            comunicados = Comunicado.objects.filter(activo=True).filter(
+                Q(geriatrico__isnull=True) | Q(geriatrico=personal.geriatrico)
+            ).exclude(pk__in=comunicaciones_leidas).count()
             if pendientes:
                 avisos.append({"texto": f"Tenés {pendientes} tarea(s) pendientes", "tipo": "warning", "url": "/tareas/"})
             if vencidas:
                 avisos.append({"texto": f"Tenés {vencidas} tarea(s) vencidas", "tipo": "danger", "url": "/tareas/"})
             if normas:
                 avisos.append({"texto": f"Hay {normas} norma(s) nueva(s) sin leer", "tipo": "info", "url": "/normas/"})
+            if comunicados:
+                avisos.append({"texto": f"Hay {comunicados} comunicado(s) nuevo(s) sin leer", "tipo": "info", "url": "/comunicados/"})
     return {"notificaciones": avisos, "notificaciones_total": len(avisos)}

@@ -13,14 +13,14 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import ActivarCuentaForm, AdelantoSueldoForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
-from .models import AdelantoSueldo, AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
+from .forms import ActivarCuentaForm, AdelantoSueldoForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, ComunicadoForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
+from .models import AdelantoSueldo, AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, Comunicado, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaComunicado, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response, reporte_residentes_pdf
 
 
@@ -444,6 +444,95 @@ class NormaMarcarLeidaView(LoginRequiredMixin, PersonalActualMixin, View):
             LecturaNormaPolitica.objects.get_or_create(norma=norma, personal=personal)
             messages.success(request, "Norma marcada como leída.")
         return redirect("norma_list")
+
+
+class ComunicadosListView(LoginRequiredMixin, PersonalActualMixin, ListView):
+    model = Comunicado
+    template_name = "institucional/comunicado_list.html"
+
+    def get_queryset(self):
+        queryset = Comunicado.objects.select_related("geriatrico", "usuario").prefetch_related("lecturas")
+        if self.request.user.is_staff:
+            return queryset
+        personal = self.personal_actual()
+        if not personal:
+            return queryset.none()
+        return queryset.filter(activo=True).filter(Q(geriatrico__isnull=True) | Q(geriatrico=personal.geriatrico))
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        personal = self.personal_actual()
+        leidos = set()
+        if personal:
+            leidos = set(LecturaComunicado.objects.filter(personal=personal).values_list("comunicado_id", flat=True))
+        context.update({"personal_actual": personal, "comunicados_leidos": leidos})
+        return context
+
+
+class ComunicadoCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
+    model = Comunicado
+    form_class = ComunicadoForm
+    template_name = "institucional/comunicado_form.html"
+    success_url = reverse_lazy("comunicado_list")
+
+    def test_func(self):
+        return self.request.user.is_staff
+
+    def form_valid(self, form):
+        form.instance.usuario = self.request.user
+        messages.success(self.request, "Comunicado publicado correctamente.")
+        return super().form_valid(form)
+
+
+class ComunicadoUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+    model = Comunicado
+    form_class = ComunicadoForm
+    template_name = "institucional/comunicado_form.html"
+    success_url = reverse_lazy("comunicado_list")
+
+    def test_func(self):
+        return self.request.user.is_staff
+
+    def form_valid(self, form):
+        messages.success(self.request, "Comunicado actualizado correctamente.")
+        return super().form_valid(form)
+
+
+class ComunicadoMarcarLeidoView(LoginRequiredMixin, PersonalActualMixin, View):
+    def post(self, request, pk):
+        personal = self.personal_actual()
+        if not personal:
+            return HttpResponseForbidden("Tu cuenta no está vinculada a una ficha de personal.")
+        comunicado = get_object_or_404(Comunicado, pk=pk, activo=True)
+        if not comunicado.corresponde_a(personal):
+            return HttpResponseForbidden("No tenés acceso a este comunicado.")
+        LecturaComunicado.objects.get_or_create(comunicado=comunicado, personal=personal)
+        messages.success(request, "Comunicado marcado como leído.")
+        return redirect("comunicado_list")
+
+
+class ComunicadoLecturasView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
+    model = Comunicado
+    template_name = "institucional/comunicado_lecturas.html"
+
+    def test_func(self):
+        return self.request.user.is_staff
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        comunicado = self.object
+        destinatarios = Personal.objects.filter(estado=Personal.Estado.ACTIVO)
+        if comunicado.geriatrico_id:
+            destinatarios = destinatarios.filter(geriatrico_id=comunicado.geriatrico_id)
+        lecturas = {
+            lectura.personal_id: lectura
+            for lectura in comunicado.lecturas.select_related("personal")
+        }
+        context["lecturas_personal"] = [
+            {"personal": persona, "lectura": lecturas.get(persona.pk)}
+            for persona in destinatarios
+        ]
+        return context
 
 
 class PanelTareasAdminView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
