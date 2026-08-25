@@ -19,8 +19,8 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
+from .forms import ActivarCuentaForm, AdelantoSueldoForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
+from .models import AdelantoSueldo, AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response, reporte_residentes_pdf
 
 
@@ -1196,6 +1196,67 @@ class ExportarPersonalView(PersonalListView):
 
 class PersonalCreateView(LoginRequiredMixin, CreateView):
     model = Personal; form_class = PersonalForm; template_name = "institucional/personal_form.html"; success_url = reverse_lazy("personal_list")
+
+
+class AdelantoSueldoListView(LoginRequiredMixin, ListView):
+    model = AdelantoSueldo
+    template_name = "institucional/adelanto_sueldo_list.html"
+
+    def periodo_seleccionado(self):
+        hoy = date.today()
+        try:
+            mes = int(self.request.GET.get("mes", hoy.month))
+            anio = int(self.request.GET.get("anio", hoy.year))
+            if mes not in range(1, 13) or anio < 2000:
+                raise ValueError
+        except (TypeError, ValueError):
+            mes, anio = hoy.month, hoy.year
+        return mes, anio
+
+    def get_queryset(self):
+        mes, anio = self.periodo_seleccionado()
+        queryset = AdelantoSueldo.objects.select_related("personal", "usuario").filter(mes=mes, anio=anio)
+        personal_id = self.request.GET.get("personal", "")
+        if personal_id:
+            queryset = queryset.filter(personal_id=personal_id)
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        mes, anio = self.periodo_seleccionado()
+        context.update({
+            "mes": mes,
+            "anio": anio,
+            "personal_id": self.request.GET.get("personal", ""),
+            "personal_opciones": Personal.objects.all(),
+            "meses": [(numero, nombre) for numero, nombre in enumerate(("", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")) if numero],
+            "anios": range(anio - 2, anio + 3),
+            "total_mes": self.get_queryset().aggregate(total=Sum("importe"))["total"] or Decimal("0.00"),
+        })
+        return context
+
+
+class AdelantoSueldoCreateView(LoginRequiredMixin, CreateView):
+    model = AdelantoSueldo
+    form_class = AdelantoSueldoForm
+    template_name = "institucional/adelanto_sueldo_form.html"
+    success_url = reverse_lazy("adelanto_sueldo_list")
+
+    def form_valid(self, form):
+        form.instance.usuario = self.request.user
+        messages.success(self.request, "Adelanto de sueldo registrado correctamente.")
+        return super().form_valid(form)
+
+
+class AdelantoSueldoUpdateView(LoginRequiredMixin, UpdateView):
+    model = AdelantoSueldo
+    form_class = AdelantoSueldoForm
+    template_name = "institucional/adelanto_sueldo_form.html"
+    success_url = reverse_lazy("adelanto_sueldo_list")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Adelanto de sueldo actualizado correctamente.")
+        return super().form_valid(form)
 
 
 class TurnosView(LoginRequiredMixin, TemplateView):

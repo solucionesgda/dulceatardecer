@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme
-from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
+from .models import AdelantoSueldo, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
 
 
 @admin.register(Geriatrico)
@@ -210,6 +210,19 @@ class PersonalAdmin(admin.ModelAdmin):
         if siguiente and url_has_allowed_host_and_scheme(siguiente, {request.get_host()}):
             return redirect(siguiente)
         return redirect("admin:institucional_personal_changelist")
+
+
+@admin.register(AdelantoSueldo)
+class AdelantoSueldoAdmin(admin.ModelAdmin):
+    list_display = ("personal", "fecha", "importe", "mes", "anio", "usuario")
+    list_filter = ("anio", "mes", "personal")
+    search_fields = ("personal__nombre_completo", "personal__dni", "observaciones")
+    readonly_fields = ("usuario", "creado_en")
+
+    def save_model(self, request, obj, form, change):
+        if not obj.usuario_id:
+            obj.usuario = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(Tarea)

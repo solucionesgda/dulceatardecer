@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, CierresCajaListView, ConfiguracionView, DescargarCierreCajaView, DescargarComprobanteView, EgresoCajaCreateView, EgresoCajaUpdateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GastosRecurrentesListView, GastoRecurrenteCreateView, GastoRecurrenteUpdateView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagarGastoRecurrenteView, PagoDetailView, PagoListView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteCreateView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
+from .views import AcercaSistemaView, ActivarCuentaView, AdelantoSueldoCreateView, AdelantoSueldoListView, AdelantoSueldoUpdateView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, CierresCajaListView, ConfiguracionView, DescargarCierreCajaView, DescargarComprobanteView, EgresoCajaCreateView, EgresoCajaUpdateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GastosRecurrentesListView, GastoRecurrenteCreateView, GastoRecurrenteUpdateView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagarGastoRecurrenteView, PagoDetailView, PagoListView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteCreateView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
     path("service-worker.js", ServiceWorkerView.as_view(), name="service_worker"),
@@ -44,7 +44,11 @@ urlpatterns = [
     path("tareas/<int:pk>/completar/", TareaCompletarView.as_view(), name="tarea_completar"),
     path("normas/", NormasListView.as_view(), name="norma_list"),
     path("normas/<int:pk>/leer/", NormaMarcarLeidaView.as_view(), name="norma_leer"),
-    path("personal/", PersonalListView.as_view(), name="personal_list"), path("personal/exportar/<str:formato>/", ExportarPersonalView.as_view(), name="personal_exportar"), path("personal/nuevo/", PersonalCreateView.as_view(), name="personal_create"), path("turnos/", TurnosView.as_view(), name="turnos"), path("turnos/exportar/<str:formato>/", ExportarTurnosView.as_view(), name="turnos_exportar"),
+    path("personal/", PersonalListView.as_view(), name="personal_list"), path("personal/exportar/<str:formato>/", ExportarPersonalView.as_view(), name="personal_exportar"), path("personal/nuevo/", PersonalCreateView.as_view(), name="personal_create"),
+    path("personal/adelantos/", AdelantoSueldoListView.as_view(), name="adelanto_sueldo_list"),
+    path("personal/adelantos/nuevo/", AdelantoSueldoCreateView.as_view(), name="adelanto_sueldo_create"),
+    path("personal/adelantos/<int:pk>/editar/", AdelantoSueldoUpdateView.as_view(), name="adelanto_sueldo_update"),
+    path("turnos/", TurnosView.as_view(), name="turnos"), path("turnos/exportar/<str:formato>/", ExportarTurnosView.as_view(), name="turnos_exportar"),
     path("geriátricos/", GeriatricoListView.as_view(), name="geriatrico_list"),
     path("geriátricos/nuevo/", GeriatricoCreateView.as_view(), name="geriatrico_create"),
     path("geriátricos/<int:pk>/editar/", GeriatricoUpdateView.as_view(), name="geriatrico_update"),

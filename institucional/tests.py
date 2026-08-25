@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoParcialForm, ResidenteForm
 from .moneda import formatear_moneda
 from .reportes import comprobante_pago_pdf, excel_response, pdf_response
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
+from .models import AdelantoSueldo, AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
 from .management.commands.limpiar_datos_operativos import Command as LimpiarDatosOperativosCommand
 
 
@@ -942,3 +942,52 @@ class GastosRecurrentesTest(TestCase):
         self.assertRedirects(respuesta, reverse("gasto_recurrente_list"))
         gasto.refresh_from_db()
         self.assertIsNone(gasto.geriatrico)
+
+
+class AdelantosSueldoTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("adelantos-admin", password="ClaveSegura1", is_staff=True)
+        self.personal = Personal.objects.create(
+            nombre_completo="Ana Empleada", dni="33444555", cargo=Personal.Cargo.CUIDADOR,
+            turno_habitual="Mañana", inicio_contrato=date.today(),
+        )
+        self.otro_personal = Personal.objects.create(
+            nombre_completo="Berta Empleada", dni="44555666", cargo=Personal.Cargo.CUIDADOR,
+            turno_habitual="Tarde", inicio_contrato=date.today(),
+        )
+        self.client.login(username="adelantos-admin", password="ClaveSegura1")
+
+    def datos_adelanto(self, **cambios):
+        datos = {
+            "personal": self.personal.pk,
+            "fecha": date.today(),
+            "importe": "15.000,50",
+            "mes": date.today().month,
+            "anio": date.today().year,
+            "observaciones": "Adelanto quincenal",
+        }
+        datos.update(cambios)
+        return datos
+
+    def test_registra_adelanto_y_muestra_historial_y_total_del_mes(self):
+        respuesta = self.client.post(reverse("adelanto_sueldo_create"), self.datos_adelanto())
+        self.assertRedirects(respuesta, reverse("adelanto_sueldo_list"))
+        adelanto = AdelantoSueldo.objects.get()
+        self.assertEqual(adelanto.personal, self.personal)
+        self.assertEqual(adelanto.usuario, self.usuario)
+        self.assertEqual(adelanto.importe, Decimal("15000.50"))
+        AdelantoSueldo.objects.create(personal=self.otro_personal, fecha=date.today(), importe=Decimal("200.00"), mes=date.today().month, anio=date.today().year, usuario=self.usuario)
+        listado = self.client.get(reverse("adelanto_sueldo_list"), {"mes": date.today().month, "anio": date.today().year, "personal": self.personal.pk})
+        self.assertContains(listado, "Ana Empleada")
+        self.assertEqual(list(listado.context["object_list"].values_list("personal", flat=True)), [self.personal.pk])
+        self.assertEqual(listado.context["total_mes"], Decimal("15000.50"))
+
+    def test_edita_adelanto_y_conserva_el_mismo_registro_y_usuario(self):
+        adelanto = AdelantoSueldo.objects.create(personal=self.personal, fecha=date.today(), importe=Decimal("100.00"), mes=date.today().month, anio=date.today().year, usuario=self.usuario)
+        respuesta = self.client.post(reverse("adelanto_sueldo_update", args=[adelanto.pk]), self.datos_adelanto(importe="250.00", observaciones="Importe corregido"))
+        self.assertRedirects(respuesta, reverse("adelanto_sueldo_list"))
+        adelanto.refresh_from_db()
+        self.assertEqual(AdelantoSueldo.objects.count(), 1)
+        self.assertEqual(adelanto.importe, Decimal("250.00"))
+        self.assertEqual(adelanto.observaciones, "Importe corregido")
+        self.assertEqual(adelanto.usuario, self.usuario)

@@ -11,7 +11,7 @@ class AccesoEmpleadaMiddleware:
     rutas_solo_gestion = (
         "/residentes/nuevo/", "/pagos/registrar/", "/pagos/generar-cuotas/",
         "/pagos/ajustar-montos/", "/caja/egresos/nuevo/", "/caja/gastos-recurrentes/", "/caja/categorias/",
-        "/caja/cerrar/", "/personal/nuevo/",
+        "/caja/cerrar/", "/personal/nuevo/", "/personal/adelantos/nuevo/",
     )
 
     def __init__(self, get_response):

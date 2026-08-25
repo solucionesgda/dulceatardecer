@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from datetime import date
 from decimal import Decimal
 
-from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, Geriatrico, MedioPagoConfiguracion, ObraSocial, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
+from .models import AdelantoSueldo, AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, Geriatrico, MedioPagoConfiguracion, ObraSocial, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .moneda import decimal_importe
 
 
@@ -202,6 +202,24 @@ class PersonalForm(forms.ModelForm):
         model = Personal
         fields = ("nombre_completo", "dni", "cargo", "turno_habitual", "telefono", "cuil", "inicio_contrato", "estado", "observaciones")
         widgets = {"inicio_contrato": forms.DateInput(attrs={"type": "date"}), "observaciones": forms.Textarea(attrs={"rows": 3})}
+
+
+class AdelantoSueldoForm(forms.ModelForm):
+    class Meta:
+        model = AdelantoSueldo
+        fields = ("personal", "fecha", "importe", "mes", "anio", "observaciones")
+        widgets = {
+            "fecha": forms.DateInput(attrs={"type": "date"}),
+            "observaciones": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["importe"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Importe")
+        activos = Personal.objects.filter(estado=Personal.Estado.ACTIVO)
+        if self.instance.pk and self.instance.personal_id:
+            activos = (activos | Personal.objects.filter(pk=self.instance.personal_id)).distinct()
+        self.fields["personal"].queryset = activos
 
 
 class ResidenteForm(forms.ModelForm):

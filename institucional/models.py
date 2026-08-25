@@ -609,6 +609,25 @@ class Personal(models.Model):
     def __str__(self): return self.nombre_completo
 
 
+class AdelantoSueldo(models.Model):
+    personal = models.ForeignKey(Personal, on_delete=models.PROTECT, related_name="adelantos_sueldo")
+    fecha = models.DateField(default=date.today)
+    importe = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    mes = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
+    anio = models.PositiveIntegerField(validators=[MinValueValidator(2000)])
+    observaciones = models.TextField(blank=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="adelantos_sueldo_registrados")
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-anio", "-mes", "-fecha", "-pk"]
+        verbose_name = "adelanto de sueldo"
+        verbose_name_plural = "adelantos de sueldo"
+
+    def __str__(self):
+        return f"{self.personal} · {self.mes:02d}/{self.anio} · {self.importe}"
+
+
 class PerfilUsuario(models.Model):
     """Datos de presentación opcionales, independientes de la ficha laboral."""
 
