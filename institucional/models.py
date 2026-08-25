@@ -99,6 +99,22 @@ class Residente(models.Model):
     def __str__(self):
         return f"{self.apellido}, {self.nombre}"
 
+    @staticmethod
+    def normalizar_nombre(valor):
+        """Elimina espacios accidentales y aplica formato de nombre uniforme."""
+        return " ".join(valor.split()).title() if valor else valor
+
+    def save(self, *args, **kwargs):
+        nombres_modificados = set()
+        for campo in ("nombre", "apellido"):
+            valor_normalizado = self.normalizar_nombre(getattr(self, campo))
+            if valor_normalizado != getattr(self, campo):
+                setattr(self, campo, valor_normalizado)
+                nombres_modificados.add(campo)
+        if kwargs.get("update_fields") is not None and nombres_modificados:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | nombres_modificados
+        super().save(*args, **kwargs)
+
     def clean(self):
         super().clean()
         if self.fecha_ingreso and self.fecha_ingreso > date.today():

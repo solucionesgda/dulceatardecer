@@ -380,6 +380,29 @@ class InvitacionesPersonalTest(TestCase):
 
 
 class GeriatricoTest(TestCase):
+    def test_normaliza_nombre_y_apellido_al_crear_residente(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=10)
+        residente = Residente.objects.create(
+            geriatrico=geriatrico,
+            nombre="  MARÍA   DEL   CARMEN  ",
+            apellido="  perez  ",
+            dni="12345678",
+            fecha_ingreso="2026-01-01",
+            contacto_familiar="María Pérez",
+        )
+        self.assertEqual(residente.nombre, "María Del Carmen")
+        self.assertEqual(residente.apellido, "Perez")
+
+    def test_normaliza_nombre_y_apellido_al_editar_residente(self):
+        geriatrico = Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=10)
+        residente = Residente.objects.create(geriatrico=geriatrico, nombre="Juan", apellido="Perez", dni="87654321", fecha_ingreso="2026-01-01", contacto_familiar="María Pérez")
+        residente.nombre = "  juan   carlos "
+        residente.apellido = "  GÓMEZ  "
+        residente.save(update_fields=["nombre", "apellido"])
+        residente.refresh_from_db()
+        self.assertEqual(residente.nombre, "Juan Carlos")
+        self.assertEqual(residente.apellido, "Gómez")
+
     def test_codigo_es_unico(self):
         Geriatrico.objects.create(nombre="Geri 1", codigo="G1", direccion="Calle 1", capacidad_total=10)
         with self.assertRaises(Exception):
