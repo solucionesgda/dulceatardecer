@@ -25,6 +25,30 @@ class GeriatricoForm(forms.ModelForm):
         widgets = {"observaciones": forms.Textarea(attrs={"rows": 4})}
 
 
+MESES_PLANILLA = (
+    (1, "Enero"), (2, "Febrero"), (3, "Marzo"), (4, "Abril"),
+    (5, "Mayo"), (6, "Junio"), (7, "Julio"), (8, "Agosto"),
+    (9, "Septiembre"), (10, "Octubre"), (11, "Noviembre"), (12, "Diciembre"),
+)
+
+
+class PlanillaBaseForm(forms.Form):
+    geriatrico = forms.ModelChoiceField(queryset=Geriatrico.objects.filter(activo=True), label="Geriátrico")
+    mes = forms.TypedChoiceField(choices=MESES_PLANILLA, coerce=int, initial=date.today().month)
+    anio = forms.IntegerField(min_value=2000, initial=date.today().year)
+
+
+class PlanillaControlResidentesForm(PlanillaBaseForm):
+    tipo_control = forms.ChoiceField(
+        choices=(("Pañales", "Control de pañales"), ("Deposiciones", "Control de deposiciones")),
+        label="Tipo de control",
+    )
+
+
+class PlanillaFirmaEmpleadasForm(PlanillaBaseForm):
+    pass
+
+
 class PagoParcialForm(forms.ModelForm):
     class Meta:
         model = PagoParcial

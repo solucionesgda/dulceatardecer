@@ -1046,3 +1046,36 @@ class ComunicadosTest(TestCase):
         self.assertContains(lecturas, "Berta Sur")
         self.assertContains(lecturas, "Leído")
         self.assertContains(lecturas, "Pendiente")
+
+
+class PlanillasTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("planillas-admin", password="ClaveSegura1", is_staff=True)
+        self.geriatrico = Geriatrico.objects.create(nombre="Geri planillas", codigo="GPL", direccion="Calle", capacidad_total=5)
+        Residente.objects.create(geriatrico=self.geriatrico, nombre="Ana", apellido="Activa", dni="11223344", fecha_ingreso=date.today(), contacto_familiar="María Pérez")
+        Residente.objects.create(geriatrico=self.geriatrico, nombre="Berta", apellido="Traslado", dni="22334455", fecha_ingreso=date.today(), contacto_familiar="María Pérez", estado=Residente.Estado.TRASLADO)
+        self.client.login(username="planillas-admin", password="ClaveSegura1")
+
+    def test_planilla_control_muestra_residentes_activos_y_dias_reales_del_mes(self):
+        respuesta = self.client.get(reverse("planilla_control_residentes"), {
+            "geriatrico": self.geriatrico.pk, "mes": 2, "anio": 2024, "tipo_control": "Pañales",
+        })
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Activa, Ana")
+        self.assertNotContains(respuesta, "Traslado, Berta")
+        self.assertEqual(list(respuesta.context["dias"])[-1], 29)
+        self.assertContains(respuesta, "Control de pañales")
+
+    def test_planilla_firmas_genera_una_fila_por_dia(self):
+        respuesta = self.client.get(reverse("planilla_firma_empleadas"), {
+            "geriatrico": self.geriatrico.pk, "mes": 2, "anio": 2024,
+        })
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(len(respuesta.context["dias"]), 29)
+        self.assertContains(respuesta, "Firma empleada")
+        self.assertContains(respuesta, "Hora ingreso")
+
+    def test_planillas_requiere_autenticacion(self):
+        self.client.logout()
+        respuesta = self.client.get(reverse("planillas"))
+        self.assertRedirects(respuesta, f"{reverse('login')}?next={reverse('planillas')}")

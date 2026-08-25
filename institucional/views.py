@@ -19,7 +19,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import ActivarCuentaForm, AdelantoSueldoForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, ComunicadoForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
+from .forms import ActivarCuentaForm, AdelantoSueldoForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, ComunicadoForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PlanillaControlResidentesForm, PlanillaFirmaEmpleadasForm, PorcentajeActualizacionForm, ResidenteForm
 from .models import AdelantoSueldo, AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, Comunicado, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaComunicado, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response, reporte_residentes_pdf
 
@@ -557,6 +557,65 @@ class PanelTareasAdminView(LoginRequiredMixin, UserPassesTestMixin, TemplateView
             "ultimas_tareas": tareas.order_by("fecha", "turno")[:10],
         })
         return context
+
+
+class PlanillasView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/planillas.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            "control_form": PlanillaControlResidentesForm(),
+            "firma_form": PlanillaFirmaEmpleadasForm(),
+        })
+        return context
+
+
+class PlanillaControlResidentesView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/planilla_control_residentes.html"
+
+    def get(self, request, *args, **kwargs):
+        form = PlanillaControlResidentesForm(request.GET)
+        if not form.is_valid():
+            return render(request, "institucional/planillas.html", {
+                "control_form": form,
+                "firma_form": PlanillaFirmaEmpleadasForm(),
+            })
+        datos = form.cleaned_data
+        dias = range(1, calendar.monthrange(datos["anio"], datos["mes"])[1] + 1)
+        residentes = Residente.objects.filter(
+            geriatrico=datos["geriatrico"], estado=Residente.Estado.ACTIVO
+        ).order_by("apellido", "nombre")
+        return render(request, self.template_name, {
+            "form": form,
+            "geriatrico": datos["geriatrico"],
+            "mes": datos["mes"],
+            "anio": datos["anio"],
+            "tipo_control": dict(form.fields["tipo_control"].choices)[datos["tipo_control"]],
+            "dias": dias,
+            "residentes": residentes,
+        })
+
+
+class PlanillaFirmaEmpleadasView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/planilla_firma_empleadas.html"
+
+    def get(self, request, *args, **kwargs):
+        form = PlanillaFirmaEmpleadasForm(request.GET)
+        if not form.is_valid():
+            return render(request, "institucional/planillas.html", {
+                "control_form": PlanillaControlResidentesForm(),
+                "firma_form": form,
+            })
+        datos = form.cleaned_data
+        dias = [date(datos["anio"], datos["mes"], dia) for dia in range(1, calendar.monthrange(datos["anio"], datos["mes"])[1] + 1)]
+        return render(request, self.template_name, {
+            "form": form,
+            "geriatrico": datos["geriatrico"],
+            "mes": datos["mes"],
+            "anio": datos["anio"],
+            "dias": dias,
+        })
 
 
 class GeriatricoListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):

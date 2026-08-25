@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AcercaSistemaView, ActivarCuentaView, AdelantoSueldoCreateView, AdelantoSueldoListView, AdelantoSueldoUpdateView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ComunicadoCreateView, ComunicadoLecturasView, ComunicadoMarcarLeidoView, ComunicadosListView, ComunicadoUpdateView, CierresCajaListView, ConfiguracionView, DescargarCierreCajaView, DescargarComprobanteView, EgresoCajaCreateView, EgresoCajaUpdateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GastosRecurrentesListView, GastoRecurrenteCreateView, GastoRecurrenteUpdateView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagarGastoRecurrenteView, PagoDetailView, PagoListView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteCreateView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
+from .views import AcercaSistemaView, ActivarCuentaView, AdelantoSueldoCreateView, AdelantoSueldoListView, AdelantoSueldoUpdateView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, ComunicadoCreateView, ComunicadoLecturasView, ComunicadoMarcarLeidoView, ComunicadosListView, ComunicadoUpdateView, CierresCajaListView, ConfiguracionView, DescargarCierreCajaView, DescargarComprobanteView, EgresoCajaCreateView, EgresoCajaUpdateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GastosRecurrentesListView, GastoRecurrenteCreateView, GastoRecurrenteUpdateView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagarGastoRecurrenteView, PagoDetailView, PagoListView, PanelTareasAdminView, PersonalCreateView, PersonalListView, PlanillaControlResidentesView, PlanillaFirmaEmpleadasView, PlanillasView, ResidenteCreateView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
     path("service-worker.js", ServiceWorkerView.as_view(), name="service_worker"),
@@ -11,6 +11,9 @@ urlpatterns = [
     path("mis-turnos/", MisTurnosView.as_view(), name="mis_turnos"),
     path("notificaciones/", NotificacionesView.as_view(), name="notificaciones"),
     path("acerca-del-sistema/", AcercaSistemaView.as_view(), name="acerca_sistema"),
+    path("planillas/", PlanillasView.as_view(), name="planillas"),
+    path("planillas/control-residentes/", PlanillaControlResidentesView.as_view(), name="planilla_control_residentes"),
+    path("planillas/firma-empleadas/", PlanillaFirmaEmpleadasView.as_view(), name="planilla_firma_empleadas"),
     path("", InicioView.as_view(), name="inicio"),
     path("residentes/", ResidenteListView.as_view(), name="residente_list"),
     path("residentes/nuevo/", ResidenteCreateView.as_view(), name="residente_create"),
