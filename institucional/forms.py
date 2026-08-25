@@ -181,6 +181,23 @@ class CompletarTareaForm(forms.Form):
     observacion = forms.CharField(label="Observación de finalización", required=False, widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Detalle opcional sobre la tarea realizada."}))
 
 
+class TareaForm(forms.ModelForm):
+    class Meta:
+        model = Tarea
+        fields = ("titulo", "descripcion", "asignada_a", "fecha", "turno")
+        widgets = {
+            "descripcion": forms.Textarea(attrs={"rows": 4}),
+            "fecha": forms.DateInput(attrs={"type": "date"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        personal = Personal.objects.filter(estado=Personal.Estado.ACTIVO)
+        if self.instance.pk and self.instance.asignada_a_id:
+            personal = (personal | Personal.objects.filter(pk=self.instance.asignada_a_id)).distinct()
+        self.fields["asignada_a"].queryset = personal
+
+
 class ActivarCuentaForm(UserCreationForm):
     email = forms.EmailField(label="Email")
 

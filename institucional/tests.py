@@ -1079,3 +1079,37 @@ class PlanillasTest(TestCase):
         self.client.logout()
         respuesta = self.client.get(reverse("planillas"))
         self.assertRedirects(respuesta, f"{reverse('login')}?next={reverse('planillas')}")
+
+
+class GestionTareasPublicaTest(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("gestion-tareas", password="ClaveSegura1", is_staff=True)
+        self.usuario_empleada = User.objects.create_user("empleada-tareas", password="ClaveSegura1")
+        self.empleada = Personal.objects.create(usuario=self.usuario_empleada, nombre_completo="Ana Tareas", dni="44556677", cargo=Personal.Cargo.CUIDADOR, turno_habitual="Mañana", inicio_contrato=date.today())
+
+    def datos_tarea(self, **cambios):
+        datos = {"titulo": "Control de medicación", "descripcion": "Verificar planilla.", "asignada_a": self.empleada.pk, "fecha": date.today(), "turno": Tarea.Turno.MANANA}
+        datos.update(cambios)
+        return datos
+
+    def test_administracion_crea_y_edita_tarea_desde_la_interfaz(self):
+        self.client.login(username="gestion-tareas", password="ClaveSegura1")
+        respuesta = self.client.post(reverse("tarea_create"), self.datos_tarea())
+        self.assertRedirects(respuesta, reverse("tarea_list"))
+        tarea = Tarea.objects.get(titulo="Control de medicación")
+        self.assertEqual(tarea.asignada_a, self.empleada)
+        self.assertEqual(tarea.estado, Tarea.Estado.PENDIENTE)
+        respuesta = self.client.post(reverse("tarea_update", args=[tarea.pk]), self.datos_tarea(titulo="Control actualizado", turno=Tarea.Turno.TARDE))
+        self.assertRedirects(respuesta, reverse("tarea_list"))
+        tarea.refresh_from_db()
+        self.assertEqual(tarea.titulo, "Control actualizado")
+        self.assertEqual(tarea.turno, Tarea.Turno.TARDE)
+
+    def test_empleada_no_puede_crear_ni_editar_por_url(self):
+        tarea = Tarea.objects.create(titulo="Tarea asignada", asignada_a=self.empleada, fecha=date.today(), turno=Tarea.Turno.MANANA)
+        self.client.login(username="empleada-tareas", password="ClaveSegura1")
+        self.assertEqual(self.client.get(reverse("tarea_create")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("tarea_update", args=[tarea.pk])).status_code, 403)
+        listado = self.client.get(reverse("tarea_list"))
+        self.assertContains(listado, "Tarea asignada")
+        self.assertNotContains(listado, "Nueva tarea")

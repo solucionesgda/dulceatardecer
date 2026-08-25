@@ -19,7 +19,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import ActivarCuentaForm, AdelantoSueldoForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, ComunicadoForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PlanillaControlResidentesForm, PlanillaFirmaEmpleadasForm, PorcentajeActualizacionForm, ResidenteForm
+from .forms import ActivarCuentaForm, AdelantoSueldoForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, ComunicadoForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PlanillaControlResidentesForm, PlanillaFirmaEmpleadasForm, PorcentajeActualizacionForm, ResidenteForm, TareaForm
 from .models import AdelantoSueldo, AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, Comunicado, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaComunicado, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response, reporte_residentes_pdf
 
@@ -414,6 +414,33 @@ class TareaCompletarView(LoginRequiredMixin, PersonalActualMixin, TemplateView):
             messages.success(request, "Tarea completada y registrada correctamente.")
             return redirect("tarea_list")
         return self.render_to_response(self.get_context_data(form=form))
+
+
+class TareaGestionMixin(LoginRequiredMixin, UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.is_staff
+
+
+class TareaCreateView(TareaGestionMixin, CreateView):
+    model = Tarea
+    form_class = TareaForm
+    template_name = "institucional/tarea_form.html"
+    success_url = reverse_lazy("tarea_list")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Tarea creada y asignada correctamente.")
+        return super().form_valid(form)
+
+
+class TareaUpdateView(TareaGestionMixin, UpdateView):
+    model = Tarea
+    form_class = TareaForm
+    template_name = "institucional/tarea_form.html"
+    success_url = reverse_lazy("tarea_list")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Tarea actualizada correctamente.")
+        return super().form_valid(form)
 
 
 class NormasListView(LoginRequiredMixin, PersonalActualMixin, ListView):
