@@ -274,7 +274,7 @@ class CajaMovimiento(models.Model):
 
     fecha = models.DateField(default=date.today)
     tipo = models.CharField(max_length=10, choices=Tipo.choices)
-    geriatrico = models.ForeignKey(Geriatrico, on_delete=models.PROTECT, related_name="movimientos_caja")
+    geriatrico = models.ForeignKey(Geriatrico, on_delete=models.PROTECT, related_name="movimientos_caja", null=True, blank=True)
     residente = models.ForeignKey(Residente, on_delete=models.PROTECT, blank=True, null=True, related_name="movimientos_caja")
     pago = models.ForeignKey(Pago, on_delete=models.PROTECT, blank=True, null=True, related_name="movimientos_caja")
     abono = models.OneToOneField(PagoParcial, on_delete=models.PROTECT, blank=True, null=True, related_name="movimiento_caja")
@@ -290,6 +290,10 @@ class CajaMovimiento(models.Model):
         ordering = ["-fecha", "-pk"]
         verbose_name = "movimiento de caja"
         verbose_name_plural = "movimientos de caja"
+
+    @property
+    def nombre_geriatrico(self):
+        return self.geriatrico.nombre if self.geriatrico else "Todos los geriátricos"
 
     def clean(self):
         super().clean()

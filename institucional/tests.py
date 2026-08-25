@@ -760,3 +760,63 @@ class LimpiarDatosOperativosCommandTest(TestCase):
         self.assertTrue(CajaCierre.objects.exists())
         self.assertTrue(CajaMovimiento.objects.exists())
         self.assertTrue(Residente.objects.exists())
+
+
+class EgresosAlcanceTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("egresos-alcance", password="ClaveSegura1", is_staff=True)
+        self.geriatrico = Geriatrico.objects.create(nombre="Geri alcance", codigo="GAC", direccion="Calle", capacidad_total=3)
+        self.categoria = CategoriaCaja.objects.create(nombre="Categoría alcance")
+        CajaMovimiento.objects.create(
+            tipo=CajaMovimiento.Tipo.INGRESO,
+            fecha=date.today(),
+            geriatrico=self.geriatrico,
+            importe=Decimal("1000.00"),
+            descripcion="Saldo para pruebas",
+        )
+        self.client.login(username="egresos-alcance", password="ClaveSegura1")
+
+    def datos_egreso(self, **cambios):
+        datos = {
+            "fecha": date.today(), "geriatrico": self.geriatrico.pk,
+            "categoria": self.categoria.pk, "proveedor_beneficiario": "Proveedor",
+            "descripcion": "Gasto operativo", "importe": "100.00",
+            "medio_pago": "", "observaciones": "",
+        }
+        datos.update(cambios)
+        return datos
+
+    def test_crea_egreso_asignado_y_general(self):
+        respuesta = self.client.post(reverse("egreso_create"), self.datos_egreso())
+        self.assertRedirects(respuesta, reverse("caja_list"))
+        especifico = CajaMovimiento.objects.get(tipo=CajaMovimiento.Tipo.EGRESO)
+        self.assertEqual(especifico.geriatrico, self.geriatrico)
+        respuesta = self.client.post(reverse("egreso_create"), self.datos_egreso(geriatrico="", importe="120.00"))
+        self.assertRedirects(respuesta, reverse("caja_list"))
+        general = CajaMovimiento.objects.get(importe=Decimal("120.00"))
+        self.assertIsNone(general.geriatrico)
+        self.assertEqual(general.nombre_geriatrico, "Todos los geriátricos")
+
+    def test_listado_filtro_y_edicion_del_alcance(self):
+        especifico = CajaMovimiento.objects.create(
+            tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=self.geriatrico,
+            categoria=self.categoria, proveedor_beneficiario="Proveedor", descripcion="Gasto operativo",
+            importe=Decimal("100.00"),
+        )
+        general = CajaMovimiento.objects.create(
+            tipo=CajaMovimiento.Tipo.EGRESO, fecha=date.today(), geriatrico=None,
+            categoria=self.categoria, proveedor_beneficiario="Proveedor", descripcion="Gasto general",
+            importe=Decimal("120.00"),
+        )
+        listado = self.client.get(reverse("caja_list"))
+        self.assertContains(listado, self.geriatrico.nombre)
+        self.assertContains(listado, "Todos los geriátricos")
+        filtrado = self.client.get(reverse("caja_list"), {"geriatrico": "general"})
+        self.assertContains(filtrado, "Todos los geriátricos")
+        self.assertNotContains(filtrado, "Gasto operativo")
+        respuesta = self.client.post(reverse("egreso_update", args=[especifico.pk]), self.datos_egreso(geriatrico=""))
+        self.assertRedirects(respuesta, reverse("caja_list"))
+        especifico.refresh_from_db()
+        self.assertIsNone(especifico.geriatrico)
+        general.refresh_from_db()
+        self.assertIsNone(general.geriatrico)

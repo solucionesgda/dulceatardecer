@@ -96,6 +96,9 @@ class EgresoCajaForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["geriatrico"].required = False
+        self.fields["geriatrico"].label = "Alcance del egreso"
+        self.fields["geriatrico"].empty_label = "Todos los geriátricos (General)"
         self.fields["categoria"].queryset = CategoriaCaja.objects.filter(activa=True)
         self.fields["importe"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Importe")
 

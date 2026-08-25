@@ -828,7 +828,9 @@ class CajaListView(LoginRequiredMixin, ListView):
         medio_pago = self.request.GET.get("medio_pago", "")
         if fecha:
             queryset = queryset.filter(fecha=fecha)
-        if geriatrico:
+        if geriatrico == "general":
+            queryset = queryset.filter(geriatrico__isnull=True)
+        elif geriatrico:
             queryset = queryset.filter(geriatrico_id=geriatrico)
         if categoria:
             queryset = queryset.filter(categoria_id=categoria)
@@ -883,7 +885,7 @@ class ExportarCajaView(CajaListView):
             (
                 movimiento.fecha,
                 movimiento.tipo,
-                movimiento.geriatrico.nombre,
+                movimiento.nombre_geriatrico,
                 movimiento.categoria.nombre if movimiento.categoria else "",
                 movimiento.proveedor_beneficiario or str(movimiento.residente or "") or movimiento.descripcion,
                 movimiento.medio_pago,
@@ -912,6 +914,25 @@ class EgresoCajaCreateView(LoginRequiredMixin, CreateView):
             form.instance.full_clean()
         except ValidationError as error:
             form.add_error("importe", error.message_dict.get("importe", ["No se pudo registrar el egreso."])[0])
+            return self.form_invalid(form)
+        return super().form_valid(form)
+
+
+class EgresoCajaUpdateView(LoginRequiredMixin, UpdateView):
+    model = CajaMovimiento
+    form_class = EgresoCajaForm
+    template_name = "institucional/egreso_form.html"
+    success_url = reverse_lazy("caja_list")
+
+    def get_queryset(self):
+        return CajaMovimiento.objects.filter(tipo=CajaMovimiento.Tipo.EGRESO)
+
+    def form_valid(self, form):
+        form.instance.tipo = CajaMovimiento.Tipo.EGRESO
+        try:
+            form.instance.full_clean()
+        except ValidationError as error:
+            form.add_error(None, error.message_dict.get("geriatrico", error.messages)[0])
             return self.form_invalid(form)
         return super().form_valid(form)
 
