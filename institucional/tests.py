@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 from .forms import ConfiguracionInstitucionalForm, EgresoCajaForm, PagoParcialForm, ResidenteForm
 from .moneda import formatear_moneda
 from .reportes import comprobante_pago_pdf, excel_response, pdf_response
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, Residente, Tarea
 from .management.commands.limpiar_datos_operativos import Command as LimpiarDatosOperativosCommand
 
 
@@ -820,3 +820,82 @@ class EgresosAlcanceTest(TestCase):
         self.assertIsNone(especifico.geriatrico)
         general.refresh_from_db()
         self.assertIsNone(general.geriatrico)
+
+
+class GastosRecurrentesTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("gastos-recurrentes", password="ClaveSegura1", is_staff=True)
+        self.geriatrico = Geriatrico.objects.create(nombre="Geri mensual", codigo="GRM", direccion="Calle", capacidad_total=3)
+        self.categoria = CategoriaCaja.objects.create(nombre="Servicios recurrentes")
+        CajaMovimiento.objects.create(
+            tipo=CajaMovimiento.Tipo.INGRESO,
+            fecha=date.today(),
+            geriatrico=self.geriatrico,
+            importe=Decimal("1000.00"),
+            descripcion="Saldo inicial",
+        )
+        self.client.login(username="gastos-recurrentes", password="ClaveSegura1")
+        self.periodo = date.today().strftime("%Y-%m")
+
+    def datos_gasto(self, **cambios):
+        datos = {
+            "concepto": "Internet", "importe_estimado": "150.00", "dia_vencimiento": 10,
+            "geriatrico": self.geriatrico.pk, "categoria": self.categoria.pk,
+            "activo": "on", "observaciones": "Servicio mensual",
+        }
+        datos.update(cambios)
+        return datos
+
+    def crear_gasto(self, **cambios):
+        respuesta = self.client.post(reverse("gasto_recurrente_create"), self.datos_gasto(**cambios))
+        self.assertRedirects(respuesta, reverse("gasto_recurrente_list"))
+        return GastoRecurrente.objects.get(concepto=cambios.get("concepto", "Internet"))
+
+    def test_crea_gasto_especifico_y_general_y_los_lista_pendientes(self):
+        especifico = self.crear_gasto()
+        general = self.crear_gasto(concepto="Alquiler", geriatrico="", importe_estimado="300.00")
+        self.assertEqual(especifico.geriatrico, self.geriatrico)
+        self.assertIsNone(general.geriatrico)
+        listado = self.client.get(reverse("gasto_recurrente_list"), {"mes": date.today().month, "anio": date.today().year})
+        self.assertContains(listado, "Internet")
+        self.assertContains(listado, "Alquiler")
+        self.assertContains(listado, "Todos los geriátricos")
+        self.assertFalse(CajaMovimiento.objects.filter(tipo=CajaMovimiento.Tipo.EGRESO).exists())
+
+    def test_pago_crea_historial_y_movimiento_en_caja_sin_duplicar(self):
+        gasto = self.crear_gasto()
+        respuesta = self.client.post(reverse("gasto_recurrente_pagar", args=[gasto.pk]), {
+            "periodo": self.periodo, "importe_real": "175.50", "fecha_pago": date.today(),
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        mensual = GastoRecurrenteMensual.objects.get(gasto_recurrente=gasto, periodo=self.periodo)
+        self.assertEqual(mensual.importe_estimado, Decimal("150.00"))
+        self.assertEqual(mensual.importe_real, Decimal("175.50"))
+        self.assertEqual(mensual.movimiento_caja.tipo, CajaMovimiento.Tipo.EGRESO)
+        self.assertEqual(mensual.movimiento_caja.geriatrico, self.geriatrico)
+        respuesta = self.client.post(reverse("gasto_recurrente_pagar", args=[gasto.pk]), {
+            "periodo": self.periodo, "importe_real": "175.50", "fecha_pago": date.today(),
+        })
+        self.assertContains(respuesta, "ya fue pagado")
+        self.assertEqual(GastoRecurrenteMensual.objects.filter(gasto_recurrente=gasto, periodo=self.periodo).count(), 1)
+        self.assertEqual(CajaMovimiento.objects.filter(tipo=CajaMovimiento.Tipo.EGRESO).count(), 1)
+
+    def test_editar_definicion_no_modifica_historial(self):
+        gasto = self.crear_gasto()
+        self.client.post(reverse("gasto_recurrente_pagar", args=[gasto.pk]), {
+            "periodo": self.periodo, "importe_real": "150.00", "fecha_pago": date.today(),
+        })
+        gasto.importe_estimado = Decimal("240.00")
+        gasto.save()
+        mensual = GastoRecurrenteMensual.objects.get(gasto_recurrente=gasto, periodo=self.periodo)
+        self.assertEqual(mensual.importe_estimado, Decimal("150.00"))
+
+    def test_puede_editar_el_alcance_del_gasto(self):
+        gasto = self.crear_gasto()
+        respuesta = self.client.post(
+            reverse("gasto_recurrente_update", args=[gasto.pk]),
+            self.datos_gasto(geriatrico=""),
+        )
+        self.assertRedirects(respuesta, reverse("gasto_recurrente_list"))
+        gasto.refresh_from_db()
+        self.assertIsNone(gasto.geriatrico)

@@ -3,7 +3,7 @@ from decimal import Decimal
 import uuid
 
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.db.models import Sum
 from django.conf import settings
@@ -367,6 +367,101 @@ class CajaMovimiento(models.Model):
         ingresos = movimientos.filter(tipo=cls.Tipo.INGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
         egresos = movimientos.filter(tipo=cls.Tipo.EGRESO).aggregate(total=Sum("importe"))["total"] or Decimal("0.00")
         return ingresos - egresos
+
+
+class GastoRecurrente(models.Model):
+    """Definición vigente de un gasto que se puede pagar una vez por período."""
+
+    concepto = models.CharField(max_length=180)
+    importe_estimado = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    dia_vencimiento = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(31)]
+    )
+    geriatrico = models.ForeignKey(
+        Geriatrico,
+        on_delete=models.PROTECT,
+        related_name="gastos_recurrentes",
+        null=True,
+        blank=True,
+    )
+    categoria = models.ForeignKey(
+        CategoriaCaja,
+        on_delete=models.PROTECT,
+        related_name="gastos_recurrentes",
+    )
+    activo = models.BooleanField(default=True)
+    observaciones = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["concepto"]
+        verbose_name = "gasto recurrente"
+        verbose_name_plural = "gastos recurrentes"
+
+    @property
+    def nombre_geriatrico(self):
+        return self.geriatrico.nombre if self.geriatrico else "Todos los geriátricos"
+
+    def __str__(self):
+        return self.concepto
+
+
+class GastoRecurrenteMensual(models.Model):
+    """Instantánea del gasto efectivamente pagado en un período determinado."""
+
+    gasto_recurrente = models.ForeignKey(
+        GastoRecurrente,
+        on_delete=models.PROTECT,
+        related_name="historial_mensual",
+    )
+    periodo = models.CharField(max_length=7)
+    concepto = models.CharField(max_length=180)
+    importe_estimado = models.DecimalField(max_digits=12, decimal_places=2)
+    importe_real = models.DecimalField(max_digits=12, decimal_places=2)
+    dia_vencimiento = models.PositiveSmallIntegerField()
+    geriatrico = models.ForeignKey(
+        Geriatrico,
+        on_delete=models.PROTECT,
+        related_name="gastos_recurrentes_mensuales",
+        null=True,
+        blank=True,
+    )
+    categoria = models.ForeignKey(CategoriaCaja, on_delete=models.PROTECT)
+    observaciones = models.TextField(blank=True)
+    fecha_pago = models.DateField()
+    movimiento_caja = models.OneToOneField(
+        CajaMovimiento,
+        on_delete=models.PROTECT,
+        related_name="gasto_recurrente_mensual",
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-periodo", "concepto"]
+        verbose_name = "pago mensual de gasto recurrente"
+        verbose_name_plural = "pagos mensuales de gastos recurrentes"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["gasto_recurrente", "periodo"],
+                name="gasto_recurrente_unico_por_periodo",
+            ),
+        ]
+
+    @property
+    def nombre_geriatrico(self):
+        return self.geriatrico.nombre if self.geriatrico else "Todos los geriátricos"
+
+    def __str__(self):
+        return f"{self.concepto} · {self.periodo}"
 
 
 class CajaCierre(models.Model):

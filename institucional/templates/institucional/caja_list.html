@@ -8,6 +8,7 @@
     <a class="btn btn-outline-secondary" href="{% url 'caja_exportar' 'pdf' %}?{{ request.GET.urlencode }}">Exportar PDF</a>
     <a class="btn btn-outline-secondary" href="{% url 'categoria_caja_list' %}">Categorías</a>
     <a class="btn btn-outline-secondary" href="{% url 'caja_cierres' %}">Cierres anteriores</a>
+    <a class="btn btn-outline-secondary" href="{% url 'gasto_recurrente_list' %}">Gastos recurrentes</a>
     <a class="btn btn-primary" href="{% url 'egreso_create' %}">Registrar egreso</a>
   </div>
 </div>

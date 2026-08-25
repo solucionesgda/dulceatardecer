@@ -10,7 +10,7 @@ class AccesoEmpleadaMiddleware:
     rutas_post_permitidas_consulta = ("/logout/", "/mi-perfil/")
     rutas_solo_gestion = (
         "/residentes/nuevo/", "/pagos/registrar/", "/pagos/generar-cuotas/",
-        "/pagos/ajustar-montos/", "/caja/egresos/nuevo/", "/caja/categorias/",
+        "/pagos/ajustar-montos/", "/caja/egresos/nuevo/", "/caja/gastos-recurrentes/", "/caja/categorias/",
         "/caja/cerrar/", "/personal/nuevo/",
     )
 

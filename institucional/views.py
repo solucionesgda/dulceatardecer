@@ -19,8 +19,8 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
-from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
-from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
+from .forms import ActivarCuentaForm, AjusteMontoForm, CambioContrasenaForm, CategoriaCajaForm, CompletarTareaForm, ConfiguracionInstitucionalForm, EgresoCajaForm, EnvioEmailForm, FotoPerfilForm, GastoRecurrenteForm, GenerarCuotasForm, GeriatricoForm, MedioPagoConfiguracionForm, ObraSocialForm, PagoParcialForm, PagarGastoRecurrenteForm, PerfilUsuarioForm, PersonalForm, PorcentajeActualizacionForm, ResidenteForm
+from .models import AsignacionTurno, CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, GrillaTurnos, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, MedioPagoConfiguracion, NormaPolitica, ObraSocial, Pago, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .reportes import comprobante_pago_pdf, enviar_pdf, excel_response, pdf_response, reporte_residentes_pdf
 
 
@@ -935,6 +935,142 @@ class EgresoCajaUpdateView(LoginRequiredMixin, UpdateView):
             form.add_error(None, error.message_dict.get("geriatrico", error.messages)[0])
             return self.form_invalid(form)
         return super().form_valid(form)
+
+
+class GastosRecurrentesListView(LoginRequiredMixin, TemplateView):
+    template_name = "institucional/gasto_recurrente_list.html"
+
+    def periodo_seleccionado(self):
+        hoy = date.today()
+        try:
+            mes = int(self.request.GET.get("mes", hoy.month))
+            anio = int(self.request.GET.get("anio", hoy.year))
+            if mes not in range(1, 13):
+                raise ValueError
+        except (TypeError, ValueError):
+            mes, anio = hoy.month, hoy.year
+        return mes, anio, f"{anio}-{mes:02d}"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        mes, anio, periodo = self.periodo_seleccionado()
+        pagados = GastoRecurrenteMensual.objects.filter(periodo=periodo).select_related(
+            "gasto_recurrente", "geriatrico", "categoria", "movimiento_caja", "usuario"
+        )
+        gastos_pagados = pagados.values_list("gasto_recurrente_id", flat=True)
+        pendientes = GastoRecurrente.objects.filter(activo=True).exclude(pk__in=gastos_pagados).select_related(
+            "geriatrico", "categoria"
+        )
+        context.update({
+            "mes": mes,
+            "anio": anio,
+            "periodo": periodo,
+            "meses": [(numero, nombre) for numero, nombre in enumerate(("", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")) if numero],
+            "anios": range(anio - 2, anio + 3),
+            "pendientes": pendientes,
+            "pagados": pagados,
+        })
+        return context
+
+
+class GastoRecurrenteCreateView(LoginRequiredMixin, CreateView):
+    model = GastoRecurrente
+    form_class = GastoRecurrenteForm
+    template_name = "institucional/gasto_recurrente_form.html"
+    success_url = reverse_lazy("gasto_recurrente_list")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Gasto recurrente creado correctamente.")
+        return super().form_valid(form)
+
+
+class GastoRecurrenteUpdateView(LoginRequiredMixin, UpdateView):
+    model = GastoRecurrente
+    form_class = GastoRecurrenteForm
+    template_name = "institucional/gasto_recurrente_form.html"
+    success_url = reverse_lazy("gasto_recurrente_list")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Gasto recurrente actualizado correctamente. Los meses ya pagados no se modifican.")
+        return super().form_valid(form)
+
+
+class PagarGastoRecurrenteView(LoginRequiredMixin, View):
+    template_name = "institucional/gasto_recurrente_pago_form.html"
+
+    def get_gasto_y_periodo(self, request, pk):
+        gasto = get_object_or_404(GastoRecurrente.objects.select_related("geriatrico", "categoria"), pk=pk)
+        periodo = request.POST.get("periodo") or request.GET.get("periodo")
+        try:
+            anio, mes = (int(valor) for valor in periodo.split("-"))
+            date(anio, mes, 1)
+        except (AttributeError, TypeError, ValueError):
+            raise ValidationError("El período seleccionado no es válido.")
+        return gasto, periodo
+
+    def contexto(self, gasto, periodo, form):
+        return {"gasto": gasto, "periodo": periodo, "form": form}
+
+    def get(self, request, pk):
+        try:
+            gasto, periodo = self.get_gasto_y_periodo(request, pk)
+        except ValidationError as error:
+            messages.error(request, error.messages[0])
+            return redirect("gasto_recurrente_list")
+        if GastoRecurrenteMensual.objects.filter(gasto_recurrente=gasto, periodo=periodo).exists():
+            messages.info(request, "Este gasto ya fue pagado para el período seleccionado.")
+            return redirect(f"{reverse('gasto_recurrente_list')}?mes={periodo[5:]}&anio={periodo[:4]}")
+        return render(request, self.template_name, self.contexto(gasto, periodo, PagarGastoRecurrenteForm(initial={"importe_real": gasto.importe_estimado})))
+
+    def post(self, request, pk):
+        try:
+            gasto, periodo = self.get_gasto_y_periodo(request, pk)
+        except ValidationError as error:
+            messages.error(request, error.messages[0])
+            return redirect("gasto_recurrente_list")
+        form = PagarGastoRecurrenteForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, self.contexto(gasto, periodo, form))
+        try:
+            with transaction.atomic():
+                if GastoRecurrenteMensual.objects.select_for_update().filter(gasto_recurrente=gasto, periodo=periodo).exists():
+                    form.add_error(None, "Este gasto ya fue pagado para el período seleccionado.")
+                    return render(request, self.template_name, self.contexto(gasto, periodo, form))
+                movimiento = CajaMovimiento(
+                    fecha=form.cleaned_data["fecha_pago"],
+                    tipo=CajaMovimiento.Tipo.EGRESO,
+                    geriatrico=gasto.geriatrico,
+                    categoria=gasto.categoria,
+                    descripcion=f"Gasto recurrente {periodo}: {gasto.concepto}",
+                    importe=form.cleaned_data["importe_real"],
+                    observaciones=gasto.observaciones,
+                    usuario=request.user,
+                )
+                movimiento.full_clean()
+                movimiento.save()
+                GastoRecurrenteMensual.objects.create(
+                    gasto_recurrente=gasto,
+                    periodo=periodo,
+                    concepto=gasto.concepto,
+                    importe_estimado=gasto.importe_estimado,
+                    importe_real=form.cleaned_data["importe_real"],
+                    dia_vencimiento=gasto.dia_vencimiento,
+                    geriatrico=gasto.geriatrico,
+                    categoria=gasto.categoria,
+                    observaciones=gasto.observaciones,
+                    fecha_pago=form.cleaned_data["fecha_pago"],
+                    movimiento_caja=movimiento,
+                    usuario=request.user,
+                )
+        except ValidationError as error:
+            detalle = error.message_dict.get("importe", error.messages)[0]
+            form.add_error("importe_real", detalle)
+            return render(request, self.template_name, self.contexto(gasto, periodo, form))
+        except IntegrityError:
+            form.add_error(None, "Este gasto ya fue pagado para el período seleccionado.")
+            return render(request, self.template_name, self.contexto(gasto, periodo, form))
+        messages.success(request, "Gasto recurrente pagado y egreso registrado automáticamente en Caja.")
+        return redirect(f"{reverse('gasto_recurrente_list')}?mes={periodo[5:]}&anio={periodo[:4]}")
 
 
 class CategoriaCajaListView(LoginRequiredMixin, ListView):

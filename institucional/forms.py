@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from datetime import date
 from decimal import Decimal
 
-from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, MedioPagoConfiguracion, ObraSocial, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
+from .models import AsignacionTurno, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, Geriatrico, MedioPagoConfiguracion, ObraSocial, PagoParcial, PerfilUsuario, Personal, PorcentajeActualizacion, Residente, Tarea
 from .moneda import decimal_importe
 
 
@@ -107,6 +107,32 @@ class EgresoCajaForm(forms.ModelForm):
         if fecha > date.today():
             raise forms.ValidationError("La fecha del egreso no puede ser posterior al día de hoy.")
         return fecha
+
+
+class GastoRecurrenteForm(forms.ModelForm):
+    class Meta:
+        model = GastoRecurrente
+        fields = ("concepto", "importe_estimado", "dia_vencimiento", "geriatrico", "categoria", "activo", "observaciones")
+        widgets = {"observaciones": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["importe_estimado"] = ImporteDecimalField(max_digits=12, decimal_places=2, label="Importe estimado")
+        self.fields["geriatrico"].required = False
+        self.fields["geriatrico"].label = "Alcance del gasto"
+        self.fields["geriatrico"].empty_label = "Todos los geriátricos (General)"
+        self.fields["categoria"].queryset = CategoriaCaja.objects.filter(activa=True)
+
+
+class PagarGastoRecurrenteForm(forms.Form):
+    importe_real = ImporteDecimalField(max_digits=12, decimal_places=2, label="Importe real")
+    fecha_pago = forms.DateField(label="Fecha de pago", initial=date.today, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def clean_fecha_pago(self):
+        fecha_pago = self.cleaned_data["fecha_pago"]
+        if fecha_pago > date.today():
+            raise forms.ValidationError("La fecha de pago no puede ser posterior al día de hoy.")
+        return fecha_pago
 
 
 class CategoriaCajaForm(forms.ModelForm):

@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, CierresCajaListView, ConfiguracionView, DescargarCierreCajaView, DescargarComprobanteView, EgresoCajaCreateView, EgresoCajaUpdateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagoDetailView, PagoListView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteCreateView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
+from .views import AcercaSistemaView, ActivarCuentaView, AjusteMontoView, BackupView, CajaCierreView, CajaListView, CategoriaCajaListView, CierresCajaListView, ConfiguracionView, DescargarCierreCajaView, DescargarComprobanteView, EgresoCajaCreateView, EgresoCajaUpdateView, EnviarComprobanteView, EnviarEstadoCuentaView, ExportarCajaView, ExportarPagosView, ExportarPersonalView, ExportarResidentesView, ExportarTurnosView, GastosRecurrentesListView, GastoRecurrenteCreateView, GastoRecurrenteUpdateView, GenerarCuotasView, GeriatricoCreateView, GeriatricoDeleteView, GeriatricoListView, GeriatricoUpdateView, InicioView, MiPerfilView, MisTurnosView, NormaMarcarLeidaView, NormasListView, NotificacionesView, PagarGastoRecurrenteView, PagoDetailView, PagoListView, PanelTareasAdminView, PersonalCreateView, PersonalListView, ResidenteCreateView, ResidenteDetailView, ResidenteListView, ServiceWorkerView, TareaCompletarView, TareaEnProcesoView, TareasListView, TurnosView
 
 urlpatterns = [
     path("service-worker.js", ServiceWorkerView.as_view(), name="service_worker"),
@@ -28,6 +28,10 @@ urlpatterns = [
     path("caja/exportar/<str:formato>/", ExportarCajaView.as_view(), name="caja_exportar"),
     path("caja/egresos/nuevo/", EgresoCajaCreateView.as_view(), name="egreso_create"),
     path("caja/egresos/<int:pk>/editar/", EgresoCajaUpdateView.as_view(), name="egreso_update"),
+    path("caja/gastos-recurrentes/", GastosRecurrentesListView.as_view(), name="gasto_recurrente_list"),
+    path("caja/gastos-recurrentes/nuevo/", GastoRecurrenteCreateView.as_view(), name="gasto_recurrente_create"),
+    path("caja/gastos-recurrentes/<int:pk>/editar/", GastoRecurrenteUpdateView.as_view(), name="gasto_recurrente_update"),
+    path("caja/gastos-recurrentes/<int:pk>/pagar/", PagarGastoRecurrenteView.as_view(), name="gasto_recurrente_pagar"),
     path("caja/categorias/", CategoriaCajaListView.as_view(), name="categoria_caja_list"),
     path("caja/cerrar/", CajaCierreView.as_view(), name="caja_cierre"),
     path("caja/cierres/", CierresCajaListView.as_view(), name="caja_cierres"),

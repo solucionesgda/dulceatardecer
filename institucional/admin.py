@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme
-from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, Geriatrico, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
+from .models import CajaCierre, CajaMovimiento, CategoriaCaja, ConfiguracionInstitucional, GastoRecurrente, GastoRecurrenteMensual, Geriatrico, HistorialEnvioEmail, InvitacionPersonal, LecturaNormaPolitica, NormaPolitica, Pago, PagoParcial, Personal, Residente, Tarea
 
 
 @admin.register(Geriatrico)
@@ -121,6 +121,21 @@ class CategoriaCajaAdmin(admin.ModelAdmin):
     list_display = ("nombre", "activa")
     list_filter = ("activa",)
     search_fields = ("nombre",)
+
+
+@admin.register(GastoRecurrente)
+class GastoRecurrenteAdmin(admin.ModelAdmin):
+    list_display = ("concepto", "importe_estimado", "dia_vencimiento", "nombre_geriatrico", "categoria", "activo")
+    list_filter = ("activo", "geriatrico", "categoria")
+    search_fields = ("concepto", "observaciones")
+
+
+@admin.register(GastoRecurrenteMensual)
+class GastoRecurrenteMensualAdmin(admin.ModelAdmin):
+    list_display = ("periodo", "concepto", "importe_real", "fecha_pago", "nombre_geriatrico", "usuario")
+    list_filter = ("periodo", "geriatrico", "categoria")
+    search_fields = ("concepto",)
+    readonly_fields = ("gasto_recurrente", "periodo", "concepto", "importe_estimado", "importe_real", "dia_vencimiento", "geriatrico", "categoria", "observaciones", "fecha_pago", "movimiento_caja", "usuario", "creado_en")
 
 
 @admin.register(CajaCierre)
